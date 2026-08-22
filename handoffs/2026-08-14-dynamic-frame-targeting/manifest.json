@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "package_type": "implementation_handoff",
+  "status": "ready",
+  "title": "Dynamic frame-rate target generation",
+  "slug": "dynamic-frame-targeting",
+  "mode": "continuation",
+  "created_at": "2026-08-14",
+  "entrypoint": "HANDOFF.md",
+  "repository": {
+    "name": "OSSS",
+    "root_at_capture": "C:\\Users\\user\\OneDrive\\Desktop\\Formalities\\OSSS",
+    "branch": "master",
+    "head": "unborn (no commits)",
+    "dirty": true
+  },
+  "evidence": [
+    "evidence/repository-state.txt",
+    "evidence/validation-baseline.txt",
+    "evidence/implementation-inventory.md",
+    "evidence/relevant-source-hashes.txt"
+  ],
+  "attachments": [],
+  "review_protocol": {
+    "required": true,
+    "modalities": [
+      "api-code-contract",
+      "runtime-capture-presentation",
+      "interactive-input-regression",
+      "performance-reliability"
+    ],
+    "framing_change_authorized": false,
+    "not_applicable_reason": null
+  },
+  "authority": {
+    "deploy_authorized": false,
+    "publish_authorized": false,
+    "external_send_authorized": false
+  },
+  "data_review": {
+    "contains_secrets": false,
+    "contains_private_customer_data": false,
+    "full_diff_included": false
+  }
+}

@@ -1,0 +1,81 @@
+# Validation baseline
+
+Captured on 2026-08-14 in the OSSS workspace. Commands were run from:
+
+    C:\Users\user\OneDrive\Desktop\Formalities\OSSS
+
+## Build environment
+
+- CMake: 4.2.1
+- Visual Studio 2022 Build Tools: 17.14.21 Developer PowerShell
+- Generator used for the verified tree: Ninja (`out\release`)
+- Runtime GPU reported by OSSS: NVIDIA GeForce RTX 5090
+
+The ordinary PowerShell environment does not initialize MSVC/Windows SDK include variables. A direct build there failed with missing standard/Windows headers; this was environmental, not a source compilation result. The verified build used:
+
+    Import-Module 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
+    Enter-VsDevShell -VsInstallPath 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools' -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+    cmake --build out\release
+
+Final result after the latest observed source edits: PASSED, exit 0. The final incremental build rebuilt `osss_gui.exe` and `osss.exe` successfully.
+
+The root `build\` directory is stale/incomplete: its cache names the Visual Studio generator but initially lacked `ALL_BUILD.vcxproj`; a non-developer-shell reconfigure then lacked a C++ compiler. Do not use that failed tree as a source-quality baseline.
+
+## Focused scheduler baseline
+
+Command:
+
+    .\out\release\osss_tests.exe
+
+Result: PASSED, exit 0.
+
+    OSSS dynamic target pacing passed: 60->121 (2x max), 60->241 (6x max), 120->240, 200->241.
+
+This validates current output counts only. It does not validate target-deadline spacing, pair selection, callback jitter, source/output phase, duplicates, queue policy, or 60→144.
+
+## Full code/GPU/GUI test suite
+
+Command:
+
+    ctest --test-dir out\release --output-on-failure
+
+Final result: PASSED, 3/3 tests, 0 failed, 0.31 seconds total.
+
+    osss_tests          Passed
+    osss_motion_tests   Passed
+    osss_gui_tests      Passed
+
+The deterministic motion test reported:
+
+    midpoint=0.681526 trailing=0.35576 leading=0.309069
+    scene-cut-current=1
+
+## CLI renderer/self-test
+
+Command:
+
+    .\out\release\osss.exe --self-test
+
+Result: PASSED, exit 0.
+
+    Direct3D 11 adapter: NVIDIA GeForce RTX 5090
+    Interpolator: adaptive bidirectional HLSL optical flow (1/4 flow, 1/8 above 1440p)
+    Motion shaders, click-through surfaces, FPS overlay, and target-driven pacing self-test passed.
+
+## Real-desktop WGC/capture/presentation smoke
+
+Command:
+
+    .\out\release\osss.exe --capture-self-test
+
+A restricted sandbox run failed with Windows error `0x80070424` because the required desktop capture service was unavailable in that environment. The same final binary was then run in the real desktop context and PASSED, exit 0:
+
+    Windows Graphics Capture, motion interpolation, and swap-chain presentation smoke test passed (240 FPS capture interval requested).
+
+Treat the sandbox failure as environmental. Preserve both facts when reporting validation.
+
+## Deliberately not run
+
+- `.\out\release\osss_input_passthrough_smoke.exe`: NOT RUN because it intentionally moves and clicks the user's system pointer. Run after implementation only when the desktop is safe for injected input.
+- Real-game 60→144 or fluctuating-rate adaptive pacing: NOT RUN. The current code lacks unique-frame detection, target-deadline/present metrics, and an agreed deterministic real-game fixture, so a numerical claim would not be trustworthy.
+- AMD/Intel, HDR, VRR/DRR, multi-monitor, exclusive-fullscreen, protected-content, and anti-cheat checks: NOT RUN and outside this handoff's implementation scope.

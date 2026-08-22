@@ -1,0 +1,76 @@
+# Repository state evidence
+
+Captured: 2026-08-14
+Repository root: C:\Users\user\OneDrive\Desktop\Formalities\OSSS
+Git repository: true
+Branch: master
+Commit: unborn (the repository has no commits; `git rev-parse HEAD` has no revision to return)
+Dirty: True
+
+## git status --short --branch --untracked-files=all
+
+```text
+## No commits yet on master
+?? .gitignore
+?? CMakeLists.txt
+?? README.md
+?? docs/ROADMAP.md
+?? src/capture_session.cpp
+?? src/capture_session.h
+?? src/capture_smoke.cpp
+?? src/capture_smoke.h
+?? src/dpi_awareness.h
+?? src/frame_pacer.cpp
+?? src/frame_pacer.h
+?? src/gui_main.cpp
+?? src/osss.manifest
+?? src/main.cpp
+?? src/motion_interpolator.cpp
+?? src/motion_interpolator.h
+?? src/renderer.cpp
+?? src/renderer.h
+?? src/stats_overlay.cpp
+?? src/stats_overlay.h
+?? src/window_catalog.cpp
+?? src/window_catalog.h
+?? tests/frame_pacer_tests.cpp
+?? tests/input_passthrough_smoke.cpp
+?? tests/motion_interpolator_tests.cpp
+```
+
+## Changed tracked filenames
+
+```text
+no tracked-file changes
+```
+
+## Unstaged diff summary
+
+```text
+no unstaged diff stat
+```
+
+## Staged diff summary
+
+```text
+no staged diff stat
+```
+
+This evidence intentionally omits file contents and full diffs. Review any added evidence for secrets and unrelated changes.
+
+## Final package reconciliation
+
+Rechecked: 2026-08-14
+
+Git still reported `No commits yet on master`. Every project file remained untracked, and the handoff package added these untracked paths:
+
+```text
+handoffs/2026-08-14-dynamic-frame-targeting/HANDOFF.md
+handoffs/2026-08-14-dynamic-frame-targeting/evidence/implementation-inventory.md
+handoffs/2026-08-14-dynamic-frame-targeting/evidence/relevant-source-hashes.txt
+handoffs/2026-08-14-dynamic-frame-targeting/evidence/repository-state.txt
+handoffs/2026-08-14-dynamic-frame-targeting/evidence/validation-baseline.txt
+handoffs/2026-08-14-dynamic-frame-targeting/manifest.json
+```
+
+Several task-relevant source files changed after the initializer snapshot while this package was being assembled. The final observed content is fingerprinted in `relevant-source-hashes.txt`. Do not restore those fingerprints; use them only to detect that another session changed a file and then re-audit the live content.

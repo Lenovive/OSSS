@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "package_type": "implementation_handoff",
+  "status": "draft",
+  "title": "TODO: human-readable title, matching the HANDOFF.md H1",
+  "slug": "TODO-kebab-case-slug",
+  "mode": "continuation",
+  "created_at": "TODO: ISO 8601 with UTC offset",
+  "entrypoint": "HANDOFF.md",
+  "repository": {
+    "name": "OSSS",
+    "root_at_capture": "TODO: absolute repository root at capture",
+    "branch": "TODO",
+    "head": "TODO: commit hash at capture",
+    "dirty": false
+  },
+  "evidence": [
+    "evidence/repository-state.txt",
+    "evidence/validation-baseline.txt",
+    "evidence/implementation-inventory.md",
+    "evidence/relevant-source-hashes.txt"
+  ],
+  "attachments": [],
+  "review_protocol": {
+    "required": true,
+    "modalities": [
+      "api-code-contract"
+    ],
+    "framing_change_authorized": false,
+    "not_applicable_reason": null
+  },
+  "authority": {
+    "deploy_authorized": false,
+    "publish_authorized": false,
+    "external_send_authorized": false
+  },
+  "data_review": {
+    "contains_secrets": false,
+    "contains_private_customer_data": false,
+    "full_diff_included": false
+  }
+}

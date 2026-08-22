@@ -1,0 +1,46 @@
+﻿# Repository state
+
+Captured: 2026-08-15
+
+```
+branch: main
+head:   98160cecb1d5649084926fcb97add2f8326a4aa9
+
+git status --short:
+ M .gitignore
+ M CMakeLists.txt
+ M README.md
+ M docs/ROADMAP.md
+ M docs/TEST_ANIMATIONS.md
+ M src/adaptive_scheduler.cpp
+ M src/adaptive_scheduler.h
+ M src/capture_session.cpp
+ M src/capture_session.h
+ M src/gui_main.cpp
+ M src/main.cpp
+ M src/motion_interpolator.cpp
+ M src/motion_interpolator.h
+ M src/renderer.cpp
+ M src/renderer.h
+ M src/stats_overlay.cpp
+ M src/stats_overlay.h
+ M src/test_animation_main.cpp
+ M src/test_pattern.cpp
+ M src/test_pattern.h
+ M tests/adaptive_scheduler_tests.cpp
+ M tests/motion_interpolator_tests.cpp
+ M tests/test_pattern_tests.cpp
+?? .github/
+?? LICENSE
+?? docs/ARCHITECTURE.md
+?? handoffs/2026-08-15-burst-baseline/
+?? handoffs/TEMPLATE/
+?? src/ui_mask.cpp
+?? src/ui_mask.h
+?? tests/interpolation_quality_tests.cpp
+?? tests/stats_overlay_tests.cpp
+?? tests/test_harness.h
+?? tests/ui_mask_tests.cpp
+```
+
+The tree was dirty at capture with in-progress work that predates this package (see the M entries). This package's own edits are: src/test_animation_main.cpp (burst verdict, default interval), src/test_pattern.{h,cpp} (SourceFramePhaseMilliseconds, IsSourceFrameInstant), tests/test_pattern_tests.cpp, tests/interpolation_quality_tests.cpp (bad-pixel and roughness-ratio gates), docs/TEST_ANIMATIONS.md, and this package.

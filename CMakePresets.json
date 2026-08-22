@@ -1,0 +1,58 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "ninja-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Ninja, MSVC)",
+      "description": "Canonical tree. Run from a Developer PowerShell for VS 2022 so cl/ninja are on PATH.",
+      "inherits": "ninja-base",
+      "binaryDir": "${sourceDir}/out/release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (Ninja, MSVC)",
+      "inherits": "ninja-base",
+      "binaryDir": "${sourceDir}/out/build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "vs2022",
+      "displayName": "Visual Studio 17 2022 (x64, multi-config)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "x64", "strategy": "set" },
+      "binaryDir": "${sourceDir}/out/vs2022",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "vs2022-release", "configurePreset": "vs2022", "configuration": "Release" }
+  ],
+  "testPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "vs2022-release",
+      "configurePreset": "vs2022",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

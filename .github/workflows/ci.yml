@@ -1,0 +1,58 @@
+name: CI
+
+# Compile gate plus the tests that need no GPU and no interactive desktop.
+#
+# Deliberately NOT run here (see CONTRIBUTING.md, "Which checks are safe to
+# run unattended"):
+#   osss_motion_tests            needs a real D3D11 device
+#   osss_interpolation_quality_tests, osss_upscaler_tests   need a D3D11 device
+#   osss_gui_tests               creates a window, needs a desktop session
+#   osss.exe --capture-self-test needs a real desktop session for WGC
+#   osss_input_passthrough_smoke moves and clicks the system pointer
+# A failure in any of those on a hosted runner would be environment-scoped, not
+# a source regression, so keeping them out preserves the signal here.
+#
+# This calls cmake directly rather than using a preset, and deliberately passes
+# no -G. The `vs2022` preset hardcodes the "Visual Studio 17 2022" generator,
+# which broke the moment the windows-latest image moved to a newer Visual
+# Studio: CMake could not find an instance and configuration failed before a
+# single file was compiled. With no generator named, CMake picks whatever the
+# newest installed Visual Studio is, so this job keeps working across runner
+# image bumps. The `release` (Ninja) and `vs2022` presets remain the documented
+# way to build locally; neither is version-pinned here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build (MSVC x64) and run GPU-less tests
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Report the toolchain this runner actually has
+        # Printed unconditionally: when a runner image bump breaks the build,
+        # this is the line that says which compiler it broke on.
+        run: |
+          cmake --version
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property catalog_productDisplayVersion
+
+      - name: Configure
+        run: cmake -S . -B out/ci -A x64
+
+      - name: Build
+        run: cmake --build out/ci --config Release
+
+      - name: Test (GPU-less subset)
+        # Exclude rather than include, so a newly added GPU-less test is
+        # covered here automatically instead of silently skipped.
+        run: >
+          ctest --test-dir out/ci -C Release
+          -E "osss_motion_tests|osss_interpolation_quality_tests|osss_upscaler_tests|osss_gui_tests"
+          --output-on-failure

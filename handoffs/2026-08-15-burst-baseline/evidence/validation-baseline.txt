@@ -1,0 +1,97 @@
+# Validation baseline
+
+Captured: 2026-08-15
+
+All commands run from a Developer PowerShell for VS 2022 on the machine
+described in environment.md, against the tree recorded in
+repository-state.txt (with this package's edits applied).
+
+## cmake --build --preset release
+
+    ninja: no work to do (after the final edit; the incremental builds that
+    preceded it produced zero warnings under /W4 /permissive-)
+    exit=0
+
+## ctest --preset release
+
+    1/7 Test #1: osss_adaptive_scheduler_tests ......   Passed
+    2/7 Test #2: osss_test_pattern_tests ............   Passed
+    3/7 Test #3: osss_motion_tests ..................   Passed   12.74 sec
+    4/7 Test #4: osss_interpolation_quality_tests ...   Passed   12.74 sec
+    5/7 Test #5: osss_ui_mask_tests .................   Passed    0.02 sec
+    6/7 Test #6: osss_stats_overlay_tests ...........   Passed    0.02 sec
+    7/7 Test #7: osss_gui_tests .....................   Passed    0.13 sec
+    100% tests passed, 0 tests failed out of 7
+
+## out\release\osss_test_pattern_tests.exe
+
+    OSSS test-animation references passed: 4 DirectX APIs x 12 base rates,
+    deterministic motion/cut metrics, HUD-overlay mask fixture, source-frame
+    phase, and exact PPM round-trip.
+
+## out\release\osss_test_animation.exe --self-test
+
+    OSSS deterministic test-pattern self-test passed.
+
+## out\release\osss.exe --self-test
+
+    12.9 s wall clock (14.6 s a second time, outside the tool sandbox).
+    Direct3D 11 adapter: NVIDIA GeForce RTX 5090
+    Interpolator: adaptive bidirectional HLSL optical flow (1/4 flow, 1/8 above 1440p)
+    Motion shaders, click-through surfaces, FPS overlay, and target-driven pacing self-test passed.
+
+## out\release\osss_interpolation_quality_tests.exe (with the new gates)
+
+    driver=hardware size=960x540 samples=216 flow-prepare=0.45ms/pair fuse=0.17ms/frame
+
+    lane        mean   worst  xfade-mean  xfade-worst  mean-bad%  worst-bad%  xfade-bad%  max
+    detail      21.29   8.86       21.24         9.93      53.79       86.76       70.55  255
+    linear      39.72  30.06       33.54        25.79       0.61        1.09        1.43  252
+    occlusion   35.69  21.21       29.56        20.38       1.85        5.33        3.97  253
+
+    temporal (60 FPS source, 4x output, 6 consecutive pairs)
+    lane        error-step  xfade-step  ratio
+    linear            0.14        0.30   0.45
+    occlusion         0.76        1.43   0.53
+    detail            2.28        5.52   0.41
+    interpolation quality: ok
+
+    The full per-sample --report table measured before the gates were added
+    (identical numbers) is in quality-bench-report.txt.
+
+## Burst runs (see HANDOFF.md for the configuration and reading)
+
+Command per case: evidence/run-burst-baseline.ps1. Summary lines as printed by
+osss_test_animation.exe:
+
+    native (26 s schedule, bottom ~12 rows overlapped by another window):
+    burst 1: 20 frames (17 unique, 0 generated, 17 real) over 248.57 ms;
+      psnr min/mean/max 34.13/34.16/34.18 dB; offset -29.25..-11.25 ms;
+      backward steps 0; verdict source-frames-only
+
+    osss --interpolator motion (26 s schedule, overlay up 13.1 s after launch):
+    burst 1: 20 frames (20 unique, 17 generated, 3 real) over 211.92 ms;
+      psnr min/mean/max 29.10/38.96/57.82 dB; offset -57.00..-32.75 ms;
+      backward steps 0; verdict generated-frames-observed
+
+    osss --interpolator blend (26 s schedule, overlay up 12.2 s after launch):
+    burst 1: 20 frames (20 unique, 17 generated, 3 real) over 197.78 ms;
+      psnr min/mean/max 26.88/35.41/55.57 dB; offset -47.00..-31.00 ms;
+      backward steps 0; verdict generated-frames-observed
+
+    native, clean desktop (8 s schedule, otherwise identical):
+    burst 1: 20 frames (14 unique, 0 generated, 14 real) over 197.51 ms;
+      psnr min/mean/max 52.99/55.48/57.14 dB; offset -25.00..-4.00 ms;
+      backward steps 0; verdict source-frames-only
+
+    native, Discord window covering the lower half (26 s schedule):
+    burst 1: 20 frames (14 unique, 0 generated, 14 real) over 207.47 ms;
+      psnr min/mean/max 13.89/13.96/14.04 dB; offset -28.50..-5.00 ms;
+      backward steps 0; verdict source-frames-only
+
+Two further batches were discarded: in the first, the burst was scheduled at
+8 s and osss.exe (which needs 10-15 s to bring its overlay up) had not attached,
+so both OSSS legs scored the bare source; in the last, the desktop was in
+active use and every leg was obscured or starved (osss motion never brought
+its overlay up within 24 s; blend showed 4 backward steps and offsets to
+-174 ms). Neither is a OSSS result and neither is recorded as one.

@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "package_type": "investigation",
+  "status": "ready",
+  "title": "Burst-scoring baseline: one fixed configuration, native and through OSSS",
+  "slug": "burst-baseline",
+  "mode": "new",
+  "created_at": "2026-08-15",
+  "entrypoint": "HANDOFF.md",
+  "repository": {
+    "name": "OSSS",
+    "root_at_capture": "C:/Users/user/OneDrive/Desktop/Formalities/OSSS",
+    "branch": "main",
+    "head": "98160cecb1d5649084926fcb97add2f8326a4aa9",
+    "dirty": true
+  },
+  "evidence": [
+    "evidence/repository-state.txt",
+    "evidence/validation-baseline.txt",
+    "evidence/environment.md",
+    "evidence/implementation-inventory.md",
+    "evidence/relevant-source-hashes.txt",
+    "evidence/run-burst-baseline.ps1",
+    "evidence/burst-native-26s.json",
+    "evidence/burst-osss-motion-26s.json",
+    "evidence/burst-osss-blend-26s.json",
+    "evidence/burst-native-8s-clean.json",
+    "evidence/burst-native-26s-obscured.json",
+    "evidence/osss-motion-stdout.txt",
+    "evidence/osss-blend-stdout.txt",
+    "evidence/quality-bench-report.txt"
+  ],
+  "attachments": [],
+  "review_protocol": {
+    "required": false,
+    "modalities": [
+      "runtime-capture-presentation"
+    ],
+    "framing_change_authorized": false,
+    "not_applicable_reason": "Baseline evidence record; nothing to review until someone re-measures against it."
+  },
+  "authority": {
+    "deploy_authorized": false,
+    "publish_authorized": false,
+    "external_send_authorized": false
+  },
+  "data_review": {
+    "contains_secrets": false,
+    "contains_private_customer_data": false,
+    "full_diff_included": false
+  }
+}

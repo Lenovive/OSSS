@@ -1,0 +1,33 @@
+# Build trees (see CMakePresets.json; out/release is canonical)
+/build/
+/out/
+/.vs/
+/.vscode/
+CMakeUserPresets.json
+
+# Visual Studio / MSVC user state
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# Screenshots and scratch images dropped at the repo root
+/*.jpg
+/*.jpeg
+/*.png
+
+# Test-run evidence written by the test-animation harness lives under %TEMP%,
+# but guard against copies landing here.
+/evidence/
+
+# Editor, IDE, and AI-assistant session state. Local to whoever is working;
+# never part of the project.
+.claude/
+.cursor/
+.aider*
+.idea/
+
+# NVIDIA FrameView's own settings file, dropped at the repo root when the
+# capture tooling runs. Machine-local: it hardcodes an absolute benchmark
+# directory, so it must never be committed.
+/Settings.ini

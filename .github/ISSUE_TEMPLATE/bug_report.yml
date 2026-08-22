@@ -1,0 +1,103 @@
+name: Bug report
+description: Something is broken, crashing, or visibly wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this. Frame-generation bugs are
+        hardware- and timing-dependent, so the environment details below are
+        usually what makes a report reproducible rather than mysterious.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+      placeholder: |
+        Ghosting appears around the HUD after about 30 seconds, only at 240 FPS.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        The exact command line, or the launcher settings you used. If a
+        specific application is needed to trigger it, name it and its graphics
+        API.
+      render: text
+      placeholder: |
+        out\release\osss.exe --title "Some Game" --target-fps 240 --pacing paced
+    validations:
+      required: true
+
+  - type: textarea
+    id: banner
+    attributes:
+      label: Startup banner
+      description: >
+        Paste what osss.exe printed on startup. It records the adapter, the
+        resolved present mode, and the output clock, which answers half the
+        questions this report would otherwise generate.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver version
+      placeholder: "NVIDIA RTX 4070, driver 566.36"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: "Run `winver`, or `[System.Environment]::OSVersion.Version` in PowerShell."
+      placeholder: "Windows 11 24H2, build 26100.2314"
+    validations:
+      required: true
+
+  - type: input
+    id: display
+    attributes:
+      label: Display setup
+      description: Refresh rate, resolution, VRR/G-Sync/FreeSync state, and whether multiple monitors are attached.
+      placeholder: "1440p 165 Hz, G-Sync on, second 60 Hz monitor attached"
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: OSSS version
+      description: The commit SHA you built, or the release tag.
+      placeholder: "main @ abc1234"
+    validations:
+      required: true
+
+  - type: textarea
+    id: checks
+    attributes:
+      label: Which checks did you run?
+      description: >
+        `ctest --preset release` and `osss.exe --self-test` results, if you
+        built from source. It is fine to say you did not run them.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >
+        Screenshots, a `--dump-sequence` viewer, stats-overlay numbers, or a
+        short capture. For a visual artifact these are worth more than any
+        description.
+    validations:
+      required: false

@@ -1,0 +1,68 @@
+name: Feature or change proposal
+description: Suggest a new option, behaviour, or design change.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Proposals are welcome. A few things are design reversals rather than
+        tweaks and want a discussion before any code is written — adding a
+        dependency or an ML model, extrapolation or a queue target other
+        than 1, and changing the platform minimums. This is the right place
+        for all of them.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation, not the solution. What goes wrong today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: >
+        If it is a new user-visible option, say what the flag would be called
+        and what its values are.
+    validations:
+      required: true
+
+  - type: textarea
+    id: measurement
+    attributes:
+      label: How would we know it worked?
+      description: >
+        What would you measure to show this is an improvement? Quality gains
+        are settled with `osss_interpolation_quality_tests --report`; pacing
+        claims with the test-animation harness or the stats overlay. "I do not
+        know yet" is an acceptable answer.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the pipeline?
+      multiple: true
+      options:
+        - Capture (Windows Graphics Capture)
+        - Optical flow / interpolation
+        - Upscaling
+        - Pacing and the output clock
+        - Presentation / swap chain / overlay
+        - Launcher GUI
+        - Test and benchmark harnesses
+        - Build, CI, or documentation
+        - Not sure
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: willing
+    attributes:
+      label: Would you like to implement it?
+      options:
+        - label: I am willing to open a pull request for this.
+          required: false

@@ -2,6 +2,12 @@
 
 [![CI](https://github.com/Lenovive/OSSS/actions/workflows/ci.yml/badge.svg)](https://github.com/Lenovive/OSSS/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Written primarily by Claude](https://img.shields.io/badge/written%20primarily%20by-Claude-d97757)](#authorship)
+
+> **Written primarily by Claude.** Most of this codebase — the optical-flow
+> estimator, the pacing loop, the launcher, the test harnesses, and these docs
+> — was written by Anthropic's Claude, directed and reviewed by
+> [@Lenovive](https://github.com/Lenovive). See [Authorship](#authorship).
 
 OSSS (Open Source Super Scaler) is an experimental, window-level
 frame-generation and upscaling pipeline for Windows. It captures an ordinary
@@ -1033,6 +1039,36 @@ extrapolation is attempted.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining quality, latency, and
 compatibility gates.
+
+## Authorship
+
+Most of OSSS was written by [Claude](https://claude.com/claude-code), Anthropic's
+AI coding assistant, working from direction and review by
+[@Lenovive](https://github.com/Lenovive). That includes the optical-flow
+estimator and its HLSL, the output clock and pacing loop, the Win32 launcher,
+the test and benchmark harnesses, and this documentation. Design decisions,
+priorities, and every merge were human calls; the prose and the code largely
+are not.
+
+This is stated plainly because you should know what you are reading before you
+trust it, and because the alternative — letting you assume otherwise — is
+worse. Two things follow from it, and both cut in your favour:
+
+- **Verify rather than trust.** Nothing here asks you to take a claim on
+  authority. `ctest --preset release` is 16 tests, `osss.exe --self-test`
+  compiles every shader, and the quality numbers come from
+  `osss_interpolation_quality_tests --report`, which scores the interpolator
+  against an analytic ground truth and against the plain crossfade it has to
+  beat. Run them. Where a measurement came from one machine, this repository
+  says so.
+- **Review it like any other code.** AI-written code fails in its own ways: it
+  is fluent, which makes a wrong assumption read as confidently as a right one,
+  and it is prone to plausible-looking comments that no longer match the code
+  beneath them. If you find one, that is a real bug — open an issue.
+
+Contributions from humans and from AI assistants are equally welcome, under the
+same standard: the checks in [CONTRIBUTING.md](CONTRIBUTING.md) must pass, and
+you should be able to explain what your change does and what you measured.
 
 ## Documentation
 

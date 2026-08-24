@@ -237,10 +237,6 @@ symbol names stay valid, **line numbers drift**, and each package's
 measurements were taken on the hardware it names. Do not edit a landed handoff;
 copy `handoffs/TEMPLATE/` to start a new one.
 
-Packages written before the project was renamed refer to it as JLSS. The name
-was changed to OSSS throughout when the project was opened up; nothing else
-about those measurements changed.
-
 ## Reporting a bug
 
 Include your GPU and driver version, your Windows build, the exact command line

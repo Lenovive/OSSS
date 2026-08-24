@@ -104,13 +104,32 @@ thread MMCSS `Games` priority where available, with a
        v
   Renderer::WaitForPresentationSlot   (frame-latency waitable object)
        v
-  Renderer::Render(alpha)  ->  Renderer::Present()
-                                 |
-                                 +-- vsync   Present(1, 0)
-                                 +-- tearing Present(0, ALLOW_TEARING)
+  Renderer::Render(alpha)
+       |  fusion draws to fusion_target_ at SOURCE size when upscaling,
+       |  straight to the back buffer when not
+       |
+       +-- upscaling? -> Upscaler::Draw  -> back buffer at OUTPUT size
+       |                 edge-directed upsample, then contrast-limited sharpen
+       v
+  Renderer::Present()
+       |
+       +-- vsync   Present(1, 0)
+       +-- tearing Present(0, ALLOW_TEARING)
 ```
 
-Note the ordering of the last two steps: OSSS waits for the presentation slot
+Two orderings in that diagram are load-bearing rather than incidental.
+
+The upscaler runs on the **fused output**, at the end, and never on the source.
+Optical flow keeps estimating on native captured pixels at the lowest resolution
+available, which is both cheaper and more accurate than estimating on
+interpolated ones: an upscaler invents plausible detail, and feeding invented
+detail to a block matcher gives it confident matches for structure that was
+never in the source. For the same reason fusion draws into a separate
+source-sized `fusion_target_` when upscaling rather than the back buffer --
+letting the rasteriser stretch the frame first and then upscaling that would be
+a different, worse operation. See `src/upscaler.h`.
+
+Note also the ordering of the last two steps: OSSS waits for the presentation slot
 *before* rendering, not after. That is what holds maximum frame latency at one
 without building a queue. Preserve it.
 
@@ -412,6 +431,10 @@ fastest way to find the code that owns a behaviour you want to change.
 | `src/png_writer.*` | Dependency-free 8-bit truecolour PNG encoding (fixed-Huffman deflate with a hash-chain match finder), base64, and an integer box downscale. It exists because every image this repo produced was a binary PPM, which nothing on a desktop opens -- so the dumps were generated and then not looked at. Header-only in spirit: no zlib, no image library. |
 | `src/frame_sequence.*` | Writes a temporally ordered run of frames as PNGs plus `viewer.html`, a self-contained stepper/looper/blinker over them. Also owns `RenderErrorView` and `RenderErrorStepView` -- the latter is the flicker map, the only image here that shows a temporal artifact directly rather than by inference. |
 | `src/ui_mask.*` | UI/HUD mask rectangle parsing, resolution against a source size, and rasterization. Backs `--ui-mask` and the launcher's HUD-mask field. |
+| `src/upscaler.*` | Spatial upscaling of the **finished** frame, never the source: an edge-directed upsample (3x3 luma structure tensor picks the dominant gradient, a 12-tap kernel is measured in a space stretched along the edge) followed by a contrast-limited 5-tap sharpen that cannot overshoot the local min/max. `UpscaleMode` is `off` / `automatic` / `always`. FSR1-class in structure, reimplemented from published technique -- no vendored code. |
+| `src/output_mode.h` | `OutputMode` (`overlay` / `fullscreen`): the *shape* of the output window, which decides whether a variable-refresh display can follow OSSS's presents or only DWM's. `overlay` is layered and click-through, so it can never reach independent flip; `fullscreen` gives up click-through to get there. Eligibility is reported, never assumed. Header-only and dependency-free. |
+| `src/debug_view.h` | `DebugView` (`off` / `flow` / `confidence` / `fallback`): runtime visualisation of the interpolator's internals, replacing the frame rather than overlaying it. Exists because all seven motion defects in this project were found by hand-editing the fusion shader to return an intermediate as colour. `fallback` answers "why is this region not being interpolated" directly. Header-only. |
+| `src/app_profile.*` | Per-application settings in `%LOCALAPPDATA%\OSSS\profiles.txt`, stored as **argument lists keyed by executable name** rather than a struct mirroring `Options`. That is the design: one parsing path, so a profile cannot express what the CLI rejects; nothing to keep in sync when a flag is added; and a file users can edit by hand. |
 | `src/stats_overlay.*` | Topmost click-through HUD, `RuntimeStats`, and the header-only `GeneratedFrameShare` telemetry helper. |
 | `src/window_catalog.*` | Target-window enumeration and rational display refresh. |
 | `src/dpi_awareness.h` | Per-monitor DPI opt-in, included by each executable. Header-only. |
@@ -420,6 +443,7 @@ fastest way to find the code that owns a behaviour you want to change.
 | `src/gui_main.cpp` | `osss_gui.exe`: Win32 settings launcher (single file, ~2.5k lines). Two-tier layout with an Advanced disclosure, a tooltip per option, and a status panel; every interactive control is owner-painted so the window follows the system light/dark theme. Builds the `osss.exe` command line and owns the `--stop-event` handshake. |
 | `src/capture_smoke.*` | Real-desktop WGC integration checks used by the self-tests. |
 | `src/test_animation_main.cpp`, `src/test_animation_backends.*`, `src/test_animation_catalog.h`, `src/test_pattern.*` | `osss_test_animation.exe`: deterministic D3D9Ex/10/11/12 source windows and reference scoring. See [TEST_ANIMATIONS.md](TEST_ANIMATIONS.md). |
+| `src/osss.manifest` | The Win32 application manifest linked into every executable: per-monitor DPI v2, and Common Controls 6 for the launcher's tooltips and subclassing. |
 | `tests/test_harness.h` | Shared `Require` / `RequireNear`. Every test uses these. |
 | `tests/launcher_layout_tests.cpp` | `LauncherLayout` and the theme tokens: that a row's columns can never be made to overlap, and that both palettes are complete. The GPU-less half of what `osss_gui --self-test` checks on real controls. |
 | `tests/window_catalog_tests.cpp` | `SelectWindowsMatching`: that an executable-name match outranks a title match, so a shell whose title is the command line cannot make an unambiguous `--title` ambiguous. Enumeration needs a desktop; the ranking does not. |

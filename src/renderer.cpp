@@ -88,6 +88,9 @@ winrt::com_ptr<ID3DBlob> CompileShader(
 UINT RectWidth(const RECT& bounds) {
     return static_cast<UINT>(std::max<LONG>(1, bounds.right - bounds.left));
 }
+RECT ToRect(const IntRect& bounds) {
+    return RECT{bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height};
+}
 // The monitor a rect sits on, in virtual-screen coordinates. Fullscreen output
 // has to cover an entire output exactly or DWM will not consider promoting it.
 RECT MonitorBoundsFor(const RECT& bounds) {
@@ -717,13 +720,13 @@ bool Renderer::OutputVisible() const noexcept {
 }
 
 void Renderer::FollowTarget(const HWND target) {
-    const auto bounds = ExtendedWindowBounds(target);
+    const auto bounds = ExtendedWindowBounds(WindowHandle::FromNative(target));
     // Fullscreen output stays locked to the monitor, so it only moves when the
     // target crosses to another one. Tracking the target rect here would shrink
     // the window off the output and lose promotion for good.
     const RECT followed = (bounds && output_mode_ == OutputMode::fullscreen)
-        ? MonitorBoundsFor(*bounds)
-        : (bounds ? *bounds : RECT{});
+        ? MonitorBoundsFor(ToRect(*bounds))
+        : (bounds ? ToRect(*bounds) : RECT{});
     if (!bounds || !output_window_) {
         return;
     }

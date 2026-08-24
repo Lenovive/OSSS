@@ -557,7 +557,7 @@ int RunAdaptiveCaptureSmokeTest() {
         const double average_latency_milliseconds = latency_sample_count > 0
             ? latency_sum_milliseconds / static_cast<double>(latency_sample_count)
             : 0.0;
-        const auto display = WindowDisplayRefreshInfo(source_window);
+        const auto display = WindowDisplayRefreshInfo(WindowHandle::FromNative(source_window));
         const bool display_can_accept_target =
             display && display->active_rate.AsDouble() >= target_rate.AsDouble() - 0.5;
 

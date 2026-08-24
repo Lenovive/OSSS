@@ -1,8 +1,6 @@
 #include "app_profile.h"
 
-#include <windows.h>
-
-#include <shlobj.h>
+#include "platform/app_paths.h"
 
 #include <algorithm>
 #include <cwctype>
@@ -185,17 +183,11 @@ void SetProfileArguments(
 }
 
 std::filesystem::path ProfilePath() {
-    PWSTR raw = nullptr;
-    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &raw)) || !raw) {
-        if (raw) {
-            CoTaskMemFree(raw);
-        }
+    const std::filesystem::path root = ApplicationDataDirectory();
+    if (root.empty()) {
         return {};
     }
-    std::filesystem::path path(raw);
-    CoTaskMemFree(raw);
-    path /= L"OSSS";
-    return path / L"profiles.txt";
+    return root / "profiles.txt";
 }
 
 ProfileParseResult LoadProfiles() {

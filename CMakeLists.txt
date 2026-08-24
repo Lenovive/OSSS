@@ -2,28 +2,32 @@ cmake_minimum_required(VERSION 3.25)
 
 project(OSSS VERSION 0.1.0 LANGUAGES CXX)
 
-if(NOT WIN32)
-    message(FATAL_ERROR "OSSS currently targets Windows 10/11 only.")
-endif()
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(OSSS_WINDOWS_MANIFEST src/osss.manifest)
+if(WIN32)
+    set(OSSS_WINDOWS_MANIFEST src/osss.manifest)
+endif()
 
 # Every OSSS target links osss_common_flags. Put warning level, language
-# conformance, and the UNICODE definitions HERE rather than repeating them per
+# conformance, and the Windows definitions HERE rather than repeating them per
 # target: a new target that forgets a line would otherwise silently drop /W4 or
 # build without UNICODE, and neither failure is visible until much later.
 add_library(osss_common_flags INTERFACE)
-target_compile_definitions(osss_common_flags INTERFACE
-    UNICODE
-    _UNICODE
-    WIN32_LEAN_AND_MEAN
-    NOMINMAX
-)
-target_compile_options(osss_common_flags INTERFACE /W4 /permissive- /EHsc)
+if(WIN32)
+    target_compile_definitions(osss_common_flags INTERFACE
+        UNICODE
+        _UNICODE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+    )
+endif()
+if(MSVC)
+    target_compile_options(osss_common_flags INTERFACE /W4 /permissive- /EHsc)
+else()
+    target_compile_options(osss_common_flags INTERFACE -Wall -Wextra)
+endif()
 
 # Assertion helpers shared by every test executable (tests/test_harness.h).
 add_library(osss_test_support INTERFACE)
@@ -38,14 +42,30 @@ add_library(osss_core
     src/adaptive_scheduler.cpp
     src/app_profile.cpp
     src/launcher_theme.cpp
+    src/platform/app_paths.cpp
+    src/platform/unicode.cpp
     src/ui_mask.cpp
     src/window_catalog.cpp
 )
 
 target_include_directories(osss_core PUBLIC src)
-# window_catalog.cpp calls DwmGetWindowAttribute, so the library declares that
-# itself rather than leaving every consumer to discover it at link time.
-target_link_libraries(osss_core PUBLIC osss_common_flags dwmapi)
+if(WIN32)
+    target_sources(osss_core PRIVATE src/window_catalog_win32.cpp)
+    # window_catalog_win32.cpp calls DwmGetWindowAttribute and app_paths.cpp
+    # calls SHGetKnownFolderPath, so the library declares those itself rather
+    # than leaving every consumer to discover them at link time.
+    target_link_libraries(osss_core PUBLIC osss_common_flags dwmapi shell32)
+else()
+    target_link_libraries(osss_core PUBLIC osss_common_flags)
+endif()
+
+# --- Windows-only targets ------------------------------------------------------
+# The capture, GPU, and overlay paths are Win32/D3D11 implementations until the
+# Phase 2/3 backends give them non-Windows twins. Everything here needs either
+# the Direct3D device or the Win32 desktop; the osss_core and osss_test_pattern
+# libraries above are what a GPU-less or non-Windows machine builds and tests.
+
+if(WIN32)
 
 add_executable(osss
     ${OSSS_WINDOWS_MANIFEST}
@@ -85,6 +105,8 @@ target_link_libraries(osss_gui PRIVATE
     uxtheme
 )
 
+endif() # WIN32
+
 # The image side of the test harnesses: the analytic pattern and the two
 # encoders that write it out. png_writer belongs here rather than in osss_core
 # because every consumer is a dump path that already links this library, and
@@ -98,6 +120,8 @@ add_library(osss_test_pattern
 
 target_include_directories(osss_test_pattern PUBLIC src)
 target_link_libraries(osss_test_pattern PUBLIC osss_common_flags)
+
+if(WIN32)
 
 add_executable(osss_test_animation
     ${OSSS_WINDOWS_MANIFEST}
@@ -117,6 +141,8 @@ target_link_libraries(osss_test_animation PRIVATE
 )
 
 add_dependencies(osss_gui osss_test_animation)
+
+endif() # WIN32
 
 enable_testing()
 
@@ -151,8 +177,11 @@ target_link_libraries(osss_png_writer_tests PRIVATE osss_test_pattern osss_test_
 
 add_test(NAME osss_png_writer_tests COMMAND osss_png_writer_tests)
 
-# Needs a working D3D11 device. Fails on GPU-less machines and under some
-# sandboxes; that is an environment failure, not a source regression.
+# The three GPU benches below need a D3D11 device, so they only exist on
+# Windows. Fails on GPU-less machines and under some sandboxes; that is an
+# environment failure, not a source regression.
+if(WIN32)
+
 add_executable(osss_motion_tests
     tests/motion_interpolator_tests.cpp
     src/gpu_timing.cpp
@@ -222,6 +251,8 @@ target_link_libraries(osss_interpolation_quality_tests PRIVATE
 )
 
 add_test(NAME osss_interpolation_quality_tests COMMAND osss_interpolation_quality_tests)
+
+endif() # WIN32
 
 add_executable(osss_output_mode_tests
     tests/output_mode_tests.cpp
@@ -300,6 +331,8 @@ target_link_libraries(osss_stats_overlay_tests PRIVATE osss_core osss_test_suppo
 
 add_test(NAME osss_stats_overlay_tests COMMAND osss_stats_overlay_tests)
 
+if(WIN32)
+
 # Creates a window, so it needs an interactive desktop session.
 add_test(NAME osss_gui_tests COMMAND osss_gui --self-test)
 
@@ -327,3 +360,5 @@ target_link_libraries(osss_input_passthrough_smoke PRIVATE
     shell32
     windowsapp
 )
+
+endif() # WIN32

@@ -7,6 +7,7 @@
 #include "launcher_theme.h"
 #include "output_mode.h"
 #include "pacing_mode.h"
+#include "platform/unicode.h"
 #include "present_mode.h"
 #include "test_animation_catalog.h"
 #include "ui_mask.h"
@@ -41,10 +42,81 @@
 namespace {
 
 using osss::LauncherLayout;
-using osss::LauncherPalette;
-using osss::RectHeight;
-using osss::RectWidth;
-using osss::ShadeColor;
+
+// The launcher paints in GDI, so its palette is the neutral one converted to
+// COLORREF once per theme change rather than converted at every paint site.
+struct ColorPalette {
+    COLORREF background;
+    COLORREF surface;
+    COLORREF foreground;
+    COLORREF foreground_muted;
+    COLORREF foreground_faint;
+    COLORREF line;
+    COLORREF field;
+    COLORREF field_line;
+    COLORREF band;
+    COLORREF accent;
+    COLORREF accent_foreground;
+    COLORREF tooltip_background;
+    COLORREF tooltip_foreground;
+    COLORREF tooltip_line;
+    COLORREF ok;
+    COLORREF warning;
+    COLORREF failure;
+};
+
+RECT ToRect(const osss::IntRect& bounds) {
+    return RECT{bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height};
+}
+
+COLORREF ToColorRef(const osss::RgbColor& color) {
+    return RGB(color.red, color.green, color.blue);
+}
+
+ColorPalette ToColorPalette(const osss::LauncherPalette& source) {
+    return ColorPalette{
+        ToColorRef(source.background),
+        ToColorRef(source.surface),
+        ToColorRef(source.foreground),
+        ToColorRef(source.foreground_muted),
+        ToColorRef(source.foreground_faint),
+        ToColorRef(source.line),
+        ToColorRef(source.field),
+        ToColorRef(source.field_line),
+        ToColorRef(source.band),
+        ToColorRef(source.accent),
+        ToColorRef(source.accent_foreground),
+        ToColorRef(source.tooltip_background),
+        ToColorRef(source.tooltip_foreground),
+        ToColorRef(source.tooltip_line),
+        ToColorRef(source.ok),
+        ToColorRef(source.warning),
+        ToColorRef(source.failure),
+    };
+}
+
+COLORREF ShadeColor(const COLORREF color, const int percent) {
+    const osss::RgbColor neutral{GetRValue(color), GetGValue(color), GetBValue(color)};
+    return ToColorRef(osss::ShadeColor(neutral, percent));
+}
+
+constexpr int RectWidth(const RECT& bounds) {
+    return bounds.right - bounds.left;
+}
+
+constexpr int RectHeight(const RECT& bounds) {
+    return bounds.bottom - bounds.top;
+}
+
+// Layout walks stay in the neutral launcher theme; the launcher only needs the
+// resulting rects as GDI RECTs.
+RECT Row(LauncherLayout& layout, const int height) {
+    return ToRect(layout.Row(height));
+}
+
+RECT Column(const LauncherLayout& layout, const int index, const int of, const int height) {
+    return ToRect(layout.Column(index, of, height));
+}
 
 constexpr wchar_t kLauncherClassName[] = L"OSSS.SettingsLauncher";
 constexpr wchar_t kSettingsHostClassName[] = L"OSSS.SettingsHost";
@@ -339,7 +411,7 @@ struct LauncherState {
     bool closing = false;
 
     // Redesign state.
-    LauncherPalette palette = osss::LauncherPaletteFor(false);
+    ColorPalette palette = ToColorPalette(osss::LauncherPaletteFor(false));
     bool dark = false;
     bool advanced_expanded = false;
     StatusLevel status_level = StatusLevel::ok;
@@ -391,7 +463,7 @@ TextRole TextRoleOf(const HWND control) {
     return static_cast<TextRole>(GetWindowLongPtrW(control, GWLP_USERDATA));
 }
 
-COLORREF ColorForRole(const LauncherPalette& palette, const TextRole role) {
+COLORREF ColorForRole(const ColorPalette& palette, const TextRole role) {
     switch (role) {
     case TextRole::normal:
         return palette.foreground;
@@ -1057,7 +1129,7 @@ void ApplyTooltipTheme(const LauncherState& state) {
 
 void ApplyTheme(LauncherState& state, const bool dark) {
     state.dark = dark;
-    state.palette = osss::LauncherPaletteFor(dark);
+    state.palette = ToColorPalette(osss::LauncherPaletteFor(dark));
     const BOOL immersive = dark ? TRUE : FALSE;
     DwmSetWindowAttribute(state.window, DWMWA_USE_IMMERSIVE_DARK_MODE, &immersive, sizeof(immersive));
     if (state.ui_mask_edit) {
@@ -1256,7 +1328,7 @@ void CreateSectionCaption(
     LauncherLayout& layout,
     const wchar_t* const text,
     const bool advanced) {
-    const RECT row = layout.Row(LauncherLayout::kCaptionHeight);
+    const RECT row = Row(layout, LauncherLayout::kCaptionHeight);
     RECT caption = row;
     caption.right = std::min(row.right, row.left + MeasureLogical(parent, state.caption_font, text) + 4);
     const HWND label = CreateControlIn(
@@ -1615,7 +1687,7 @@ std::optional<double> SelectedTargetFps(const LauncherState& state, const HWND t
     if (item_data > 0) {
         return static_cast<double>(item_data);
     }
-    return osss::WindowDisplayRefreshRate(target);
+    return osss::WindowDisplayRefreshRate(osss::WindowHandle::FromNative(target));
 }
 
 int SelectedMaxMultiplier(const LauncherState& state) {
@@ -1791,9 +1863,10 @@ std::vector<std::wstring> ProfileArgumentsFor(const LauncherState& state) {
 
 // Executable file name for a window, via the catalog that already collects it.
 std::wstring ExecutableNameFor(const HWND target) {
+    const auto handle = osss::WindowHandle::FromNative(target);
     for (const osss::WindowEntry& entry : osss::ListCapturableWindows()) {
-        if (entry.handle == target) {
-            return entry.process_name;
+        if (entry.handle == handle) {
+            return osss::ToWide(entry.process_name);
         }
     }
     return {};
@@ -1919,15 +1992,18 @@ void PopulateTargets(LauncherState& state) {
     int foreground_index = -1;
     int first_index = -1;
     for (const auto& entry : osss::ListCapturableWindows()) {
-        if (entry.process_id == own_process || entry.handle == state.window) {
+        if (entry.process_id == own_process ||
+            entry.handle == osss::WindowHandle::FromNative(state.window)) {
             continue;
         }
 
         // Executable first: the combo is far narrower than a typical title, so whatever
         // leads has to be the part that identifies the app.
         const std::wstring display =
-            (entry.process_name.empty() ? L"(unknown)" : entry.process_name) +
-            L"  \u2014  " + entry.title +
+            (entry.process_name.empty()
+                    ? L"(unknown)"
+                    : osss::ToWide(entry.process_name)) +
+            L"  \u2014  " + osss::ToWide(entry.title) +
             L"  (PID " + std::to_wstring(entry.process_id) + L")";
         const LRESULT index = SendMessageW(
             state.target_combo,
@@ -1941,14 +2017,14 @@ void PopulateTargets(LauncherState& state) {
             state.target_combo,
             CB_SETITEMDATA,
             index,
-            reinterpret_cast<LPARAM>(entry.handle));
+            static_cast<LPARAM>(entry.handle.Native()));
         if (first_index < 0) {
             first_index = static_cast<int>(index);
         }
-        if (entry.handle == prior_selection) {
+        if (entry.handle == osss::WindowHandle::FromNative(prior_selection)) {
             prior_index = static_cast<int>(index);
         }
-        if (entry.handle == foreground) {
+        if (entry.handle == osss::WindowHandle::FromNative(foreground)) {
             foreground_index = static_cast<int>(index);
         }
     }
@@ -1980,7 +2056,7 @@ bool SelectTargetInCombo(LauncherState& state, const HWND target) {
 HWND FindWindowForProcess(const DWORD process_id) {
     for (const auto& entry : osss::ListCapturableWindows()) {
         if (entry.process_id == process_id) {
-            return entry.handle;
+            return reinterpret_cast<HWND>(entry.handle.Native());
         }
     }
     return nullptr;
@@ -2455,7 +2531,8 @@ void BeginGeneration(LauncherState& state) {
     ShowWindow(state.window, SW_MINIMIZE);
     SetForegroundWindow(target);
     BringWindowToTop(target);
-    const std::wstring target_title = osss::WindowTitle(target);
+    const std::wstring target_title =
+        osss::ToWide(osss::WindowTitle(osss::WindowHandle::FromNative(target)));
     SetStatus(
         state,
         StatusLevel::ok,
@@ -2603,7 +2680,7 @@ bool CreateLauncherControls(LauncherState& state) {
     }
 
     state.dark = osss::SystemPrefersDarkApps();
-    state.palette = osss::LauncherPaletteFor(state.dark);
+    state.palette = ToColorPalette(osss::LauncherPaletteFor(state.dark));
     state.advanced_expanded = LoadAdvancedExpanded();
 
     const HWND heading = CreateControlIn(
@@ -2665,11 +2742,11 @@ bool CreateLauncherControls(LauncherState& state) {
 
     // --- Target ------------------------------------------------------------
     CreateSectionCaption(state, host, layout, L"TARGET", false);
-    const RECT target_label_row = layout.Column(0, 1, LauncherLayout::kLabelHeight);
+    const RECT target_label_row = Column(layout, 0,1, LauncherLayout::kLabelHeight);
     const FieldLabel target_label =
         CreateFieldLabel(state, host, target_label_row, L"Target window", false);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
-    RECT target_rect = layout.Column(0, 1, LauncherLayout::kControlHeight);
+    RECT target_rect = Column(layout, 0,1, LauncherLayout::kControlHeight);
     target_rect.right = 580;
     state.target_combo = CreateComboIn(state, host, target_rect, 250, kTargetCombo, false);
     SendMessageW(state.target_combo, CB_SETDROPPEDWIDTH, ScaleForWindow(window, 900), 0);
@@ -2684,15 +2761,15 @@ bool CreateLauncherControls(LauncherState& state) {
     // --- Output ------------------------------------------------------------
     CreateSectionCaption(state, host, layout, L"OUTPUT", false);
     const FieldLabel fps_label = CreateFieldLabel(
-        state, host, layout.Column(0, 2, LauncherLayout::kLabelHeight), L"Output target", false);
+        state, host, Column(layout, 0, 2, LauncherLayout::kLabelHeight), L"Output target", false);
     const FieldLabel multiplier_label = CreateFieldLabel(
-        state, host, layout.Column(1, 2, LauncherLayout::kLabelHeight),
+        state, host, Column(layout, 1, 2, LauncherLayout::kLabelHeight),
         L"Maximum interpolation", false);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
     state.target_fps_combo = CreateComboIn(
-        state, host, layout.Column(0, 2, LauncherLayout::kControlHeight), 260, kTargetFpsCombo, false);
+        state, host, Column(layout, 0, 2, LauncherLayout::kControlHeight), 260, kTargetFpsCombo, false);
     state.max_multiplier_combo = CreateComboIn(
-        state, host, layout.Column(1, 2, LauncherLayout::kControlHeight), 220, kMultiplierCombo, false);
+        state, host, Column(layout, 1, 2, LauncherLayout::kControlHeight), 220, kMultiplierCombo, false);
     layout.Gap(LauncherLayout::kControlHeight + LauncherLayout::kRowGap);
 
     const LRESULT automatic_target = SendMessageW(
@@ -2719,17 +2796,17 @@ bool CreateLauncherControls(LauncherState& state) {
     SendMessageW(state.max_multiplier_combo, CB_SETCURSEL, 4, 0);
 
     const FieldLabel interpolator_label = CreateFieldLabel(
-        state, host, layout.Column(0, 2, LauncherLayout::kLabelHeight), L"Interpolator", false);
+        state, host, Column(layout, 0, 2, LauncherLayout::kLabelHeight), L"Interpolator", false);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
     state.interpolator_combo = CreateComboIn(
-        state, host, layout.Column(0, 2, LauncherLayout::kControlHeight), 140, kInterpolatorCombo, false);
+        state, host, Column(layout, 0, 2, LauncherLayout::kControlHeight), 140, kInterpolatorCombo, false);
     AddComboItems(
         state.interpolator_combo,
         {L"Motion aware (recommended)", L"Temporal blend (comparison)"},
         0);
     {
         // Vertically centred on the 32 px control band beside it.
-        RECT stats_row = layout.Column(1, 2, LauncherLayout::kCheckboxHeight);
+        RECT stats_row = Column(layout, 1, 2, LauncherLayout::kCheckboxHeight);
         stats_row.top += 4;
         stats_row.bottom += 4;
         state.stats_checkbox = CreateCheckboxIn(
@@ -2739,7 +2816,7 @@ bool CreateLauncherControls(LauncherState& state) {
     layout.Gap(LauncherLayout::kControlHeight + kDisclosureGap);
 
     // --- Advanced disclosure ------------------------------------------------
-    const RECT disclosure = layout.Row(kDisclosureHeight);
+    const RECT disclosure = Row(layout, kDisclosureHeight);
     state.advanced_toggle = CreateControlIn(
         state, host, 0, L"BUTTON", L"Advanced settings", BS_PUSHBUTTON | WS_TABSTOP,
         disclosure, state.normal_font, kAdvancedToggle);
@@ -2754,14 +2831,14 @@ bool CreateLauncherControls(LauncherState& state) {
     // single three-column row.
     CreateSectionCaption(state, host, layout, L"PACING", true);
     const FieldLabel present_label = CreateFieldLabel(
-        state, host, layout.Column(0, 2, LauncherLayout::kLabelHeight), L"Present mode", true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kLabelHeight), L"Present mode", true);
     const FieldLabel pacing_label = CreateFieldLabel(
-        state, host, layout.Column(1, 2, LauncherLayout::kLabelHeight), L"Pacing", true);
+        state, host, Column(layout, 1, 2, LauncherLayout::kLabelHeight), L"Pacing", true);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
     state.present_mode_combo = CreateComboIn(
-        state, host, layout.Column(0, 2, LauncherLayout::kControlHeight), 140, kPresentModeCombo, true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kControlHeight), 140, kPresentModeCombo, true);
     state.pacing_mode_combo = CreateComboIn(
-        state, host, layout.Column(1, 2, LauncherLayout::kControlHeight), 140, kPacingModeCombo, true);
+        state, host, Column(layout, 1, 2, LauncherLayout::kControlHeight), 140, kPacingModeCombo, true);
     layout.Gap(LauncherLayout::kControlHeight + LauncherLayout::kRowGap);
     // Order matches SelectedPresentMode: automatic, tearing, vsync.
     AddComboItems(state.present_mode_combo, {L"Auto", L"Tearing / VRR", L"VSync"}, 0);
@@ -2769,14 +2846,14 @@ bool CreateLauncherControls(LauncherState& state) {
     AddComboItems(state.pacing_mode_combo, {L"Paced", L"Queued", L"Unpaced"}, 0);
 
     const FieldLabel buffer_label = CreateFieldLabel(
-        state, host, layout.Column(0, 2, LauncherLayout::kLabelHeight), L"Adaptive buffer floor", true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kLabelHeight), L"Adaptive buffer floor", true);
     const FieldLabel ceiling_label = CreateFieldLabel(
-        state, host, layout.Column(1, 2, LauncherLayout::kLabelHeight), L"Ceiling pacing", true);
+        state, host, Column(layout, 1, 2, LauncherLayout::kLabelHeight), L"Ceiling pacing", true);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
     state.buffer_combo = CreateComboIn(
-        state, host, layout.Column(0, 2, LauncherLayout::kControlHeight), 200, kBufferCombo, true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kControlHeight), 200, kBufferCombo, true);
     state.ceiling_pacing_combo = CreateComboIn(
-        state, host, layout.Column(1, 2, LauncherLayout::kControlHeight), 120, kCeilingPacingCombo, true);
+        state, host, Column(layout, 1, 2, LauncherLayout::kControlHeight), 120, kCeilingPacingCombo, true);
     layout.Gap(LauncherLayout::kControlHeight + LauncherLayout::kSectionGap);
     for (const int buffer_milliseconds : kBufferFloorOptions) {
         const std::wstring label = std::to_wstring(buffer_milliseconds) + L" ms floor";
@@ -2792,14 +2869,14 @@ bool CreateLauncherControls(LauncherState& state) {
     // --- Quality ------------------------------------------------------------
     CreateSectionCaption(state, host, layout, L"QUALITY", true);
     const FieldLabel flow_label = CreateFieldLabel(
-        state, host, layout.Column(0, 2, LauncherLayout::kLabelHeight), L"Flow scale", true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kLabelHeight), L"Flow scale", true);
     const FieldLabel upscale_label = CreateFieldLabel(
-        state, host, layout.Column(1, 2, LauncherLayout::kLabelHeight), L"Upscale", true);
+        state, host, Column(layout, 1, 2, LauncherLayout::kLabelHeight), L"Upscale", true);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
     state.flow_scale_combo = CreateComboIn(
-        state, host, layout.Column(0, 2, LauncherLayout::kControlHeight), 160, kFlowScaleCombo, true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kControlHeight), 160, kFlowScaleCombo, true);
     state.upscale_combo = CreateComboIn(
-        state, host, layout.Column(1, 2, LauncherLayout::kControlHeight), 140, kUpscaleCombo, true);
+        state, host, Column(layout, 1, 2, LauncherLayout::kControlHeight), 140, kUpscaleCombo, true);
     layout.Gap(LauncherLayout::kControlHeight + LauncherLayout::kRowGap);
     // Order matches SelectedFlowScale: automatic, quality, performance, ultra.
     AddComboItems(
@@ -2814,7 +2891,7 @@ bool CreateLauncherControls(LauncherState& state) {
         0);
 
     {
-        const RECT row = layout.Row(LauncherLayout::kCheckboxHeight);
+        const RECT row = Row(layout, LauncherLayout::kCheckboxHeight);
         state.performance_mode_checkbox = CreateCheckboxIn(
             state, host, row, L"Cheaper motion search", kPerformanceModeCheckbox, true);
         SendMessageW(state.performance_mode_checkbox, BM_SETCHECK, BST_UNCHECKED, 0);
@@ -2826,7 +2903,7 @@ bool CreateLauncherControls(LauncherState& state) {
     {
         // On by default, like the flag: it is an extra search candidate seeded
         // from the previous pair, and off exists for A/B comparison.
-        const RECT row = layout.Row(LauncherLayout::kCheckboxHeight);
+        const RECT row = Row(layout, LauncherLayout::kCheckboxHeight);
         state.temporal_prior_checkbox = CreateCheckboxIn(
             state, host, row, L"Temporal prior", kTemporalPriorCheckbox, true);
         SendMessageW(state.temporal_prior_checkbox, BM_SETCHECK, BST_CHECKED, 0);
@@ -2839,10 +2916,10 @@ bool CreateLauncherControls(LauncherState& state) {
     // --- Output shape and HUD masks ----------------------------------------
     CreateSectionCaption(state, host, layout, L"OUTPUT SHAPE AND HUD MASKS", true);
     const FieldLabel output_label = CreateFieldLabel(
-        state, host, layout.Column(0, 2, LauncherLayout::kLabelHeight), L"Output", true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kLabelHeight), L"Output", true);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
     state.output_mode_combo = CreateComboIn(
-        state, host, layout.Column(0, 2, LauncherLayout::kControlHeight), 120, kOutputModeCombo, true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kControlHeight), 120, kOutputModeCombo, true);
     layout.Gap(LauncherLayout::kControlHeight + LauncherLayout::kRowGap);
     // Order matches SelectedOutputMode: overlay, fullscreen.
     AddComboItems(
@@ -2851,11 +2928,11 @@ bool CreateLauncherControls(LauncherState& state) {
         0);
 
     const FieldLabel mask_label = CreateFieldLabel(
-        state, host, layout.Column(0, 1, LauncherLayout::kLabelHeight),
+        state, host, Column(layout, 0, 1, LauncherLayout::kLabelHeight),
         L"HUD mask regions (optional)", true);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
     {
-        const RECT field = layout.Row(LauncherLayout::kControlHeight);
+        const RECT field = Row(layout, LauncherLayout::kControlHeight);
         state.mask_field_rect = field;
         // Borderless, inset inside the frame the host paints for it: a
         // WS_EX_CLIENTEDGE edit is drawn by the system in a colour the dark
@@ -2873,7 +2950,7 @@ bool CreateLauncherControls(LauncherState& state) {
         layout.Gap(4);
     }
     {
-        const RECT row = layout.Row(17);
+        const RECT row = Row(layout, 17);
         state.ui_mask_hint = CreateControlIn(
             state, host, 0, L"STATIC", kMaskHintDefault, SS_LEFT | SS_CENTERIMAGE,
             row, state.small_font);
@@ -2882,7 +2959,7 @@ bool CreateLauncherControls(LauncherState& state) {
         layout.Gap(LauncherLayout::kCheckboxGap);
     }
     {
-        const RECT row = layout.Row(LauncherLayout::kCheckboxHeight);
+        const RECT row = Row(layout, LauncherLayout::kCheckboxHeight);
         state.ui_mask_auto_checkbox = CreateCheckboxIn(
             state, host, row, L"Also detect static HUD regions automatically",
             kUiMaskAutoCheckbox, true);
@@ -2895,17 +2972,17 @@ bool CreateLauncherControls(LauncherState& state) {
     // --- Diagnostics and profiles ------------------------------------------
     CreateSectionCaption(state, host, layout, L"DIAGNOSTICS AND PROFILES", true);
     const FieldLabel debug_label = CreateFieldLabel(
-        state, host, layout.Column(0, 2, LauncherLayout::kLabelHeight), L"Diagnostic view", true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kLabelHeight), L"Diagnostic view", true);
     layout.Gap(LauncherLayout::kLabelHeight + LauncherLayout::kLabelGap);
     state.debug_view_combo = CreateComboIn(
-        state, host, layout.Column(0, 2, LauncherLayout::kControlHeight), 160, kDebugViewCombo, true);
+        state, host, Column(layout, 0, 2, LauncherLayout::kControlHeight), 160, kDebugViewCombo, true);
     // Order matches SelectedDebugView: off, flow, confidence, fallback.
     AddComboItems(
         state.debug_view_combo,
         {L"Off (normal output)", L"Flow field", L"Confidence", L"Fallback reason"},
         0);
     {
-        RECT profile_row = layout.Column(1, 2, LauncherLayout::kCheckboxHeight);
+        RECT profile_row = Column(layout, 1, 2, LauncherLayout::kCheckboxHeight);
         profile_row.top += 4;
         profile_row.bottom += 4;
         state.profile_checkbox = CreateCheckboxIn(

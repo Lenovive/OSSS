@@ -14,6 +14,7 @@
 #include "stats_overlay.h"
 #include "ui_mask.h"
 #include "window_catalog.h"
+#include "platform/unicode.h"
 
 #include <windows.h>
 #include <avrt.h>
@@ -34,6 +35,13 @@
 #include <vector>
 
 namespace {
+
+// The core's IntRect and Win32's RECT describe the same rectangle differently
+// (top-left + size versus top-left + bottom-right); this conversion lives at
+// the window boundary, where the two types meet.
+[[nodiscard]] RECT ToRect(const osss::IntRect& rect) {
+    return RECT{rect.x, rect.y, rect.x + rect.width, rect.y + rect.height};
+}
 
 struct Options {
     int max_multiplier = 6;
@@ -670,10 +678,10 @@ void PrintWindows() {
             continue;
         }
         std::wcout
-            << L"0x" << std::hex << reinterpret_cast<std::uintptr_t>(entry.handle)
+            << L"0x" << std::hex << entry.handle.Native()
             << std::dec << L"  pid=" << entry.process_id << L"  "
-            << (entry.process_name.empty() ? L"(unknown)" : entry.process_name)
-            << L"  " << entry.title << L'\n';
+            << (entry.process_name.empty() ? L"(unknown)" : osss::ToWide(entry.process_name))
+            << L"  " << osss::ToWide(entry.title) << L'\n';
     }
 }
 
@@ -683,9 +691,10 @@ void PrintWindows() {
 // section, so an unreadable process quietly means "no profile" rather than an
 // error.
 std::wstring TargetExecutableName(const HWND target) {
+    const auto handle = osss::WindowHandle::FromNative(target);
     for (const osss::WindowEntry& entry : osss::ListCapturableWindows()) {
-        if (entry.handle == target) {
-            return entry.process_name;
+        if (entry.handle == handle) {
+            return osss::ToWide(entry.process_name);
         }
     }
     return {};
@@ -703,7 +712,7 @@ HWND ResolveTarget(const Options& options) {
         throw std::invalid_argument("Select a target with --title or --hwnd. Use --list-windows to inspect candidates.");
     }
 
-    auto matches = osss::FindWindowsMatching(*options.title);
+    auto matches = osss::FindWindowsMatching(osss::ToUtf8(*options.title));
     const DWORD own_process = GetCurrentProcessId();
     std::erase_if(matches, [own_process](const osss::WindowEntry& entry) {
         return entry.process_id == own_process;
@@ -716,14 +725,14 @@ HWND ResolveTarget(const Options& options) {
         std::wcerr << L"--title matched more than one window:\n";
         for (const auto& match : matches) {
             std::wcerr
-                << L"  0x" << std::hex << reinterpret_cast<std::uintptr_t>(match.handle)
+                << L"  0x" << std::hex << match.handle.Native()
                 << std::dec << L"  "
-                << (match.process_name.empty() ? L"(unknown)" : match.process_name)
-                << L"  " << match.title << L'\n';
+                << (match.process_name.empty() ? L"(unknown)" : osss::ToWide(match.process_name))
+                << L"  " << osss::ToWide(match.title) << L'\n';
         }
         throw std::runtime_error("Use a more specific --title or pass --hwnd.");
     }
-    return matches.front().handle;
+    return reinterpret_cast<HWND>(matches.front().handle.Native());
 }
 
 ResolvedTarget ResolveTargetRate(const Options& options, const HWND target) {
@@ -734,7 +743,7 @@ ResolvedTarget ResolveTargetRate(const Options& options, const HWND target) {
             true,
         };
     }
-    const auto display_refresh = osss::WindowDisplayRefreshInfo(target);
+    const auto display_refresh = osss::WindowDisplayRefreshInfo(osss::WindowHandle::FromNative(target));
     if (!display_refresh || !display_refresh->active_rate.IsValid()) {
         throw std::runtime_error(
             "OSSS could not read the target display refresh rate. Pass --target-fps explicitly.");
@@ -790,8 +799,8 @@ int RunSelfTest(
     }
 
     osss::StatsOverlay stats_overlay;
-    constexpr RECT overlay_test_bounds{0, 0, 1280, 720};
-    renderer.CreateOutputWindow(overlay_test_bounds, 6, 240.0);
+    constexpr osss::IntRect overlay_test_bounds{0, 0, 1280, 720};
+    renderer.CreateOutputWindow(ToRect(overlay_test_bounds), 6, 240.0);
     if (!renderer.FrameLatencyWaitableObject()) {
         throw std::runtime_error("Waitable swap-chain self-test failed.");
     }
@@ -880,13 +889,14 @@ int RunSelfTest(
     }
     stats_overlay.Update(60.0, 360.0);
     RECT overlay_window_bounds{};
-    const UINT overlay_monitor_dpi = GetDpiForWindow(stats_overlay.Window());
+    const HWND overlay_window = reinterpret_cast<HWND>(stats_overlay.Window().Native());
+    const UINT overlay_monitor_dpi = GetDpiForWindow(overlay_window);
     constexpr UINT minimum_overlay_layout_dpi = 72;
     constexpr int overlay_offset_dip = 14;
     constexpr int overlay_width_dip = 500;
     constexpr int overlay_height_dip = 216;
-    const int overlay_target_width = overlay_test_bounds.right - overlay_test_bounds.left;
-    const int overlay_target_height = overlay_test_bounds.bottom - overlay_test_bounds.top;
+    const int overlay_target_width = overlay_test_bounds.width;
+    const int overlay_target_height = overlay_test_bounds.height;
     const UINT width_fit_dpi = static_cast<UINT>(
         static_cast<std::int64_t>(overlay_target_width) * 96 /
         (overlay_width_dip + 2 * overlay_offset_dip));
@@ -898,16 +908,16 @@ int RunSelfTest(
         std::min(overlay_monitor_dpi, std::min(width_fit_dpi, height_fit_dpi)));
     const int expected_overlay_width = MulDiv(overlay_width_dip, overlay_layout_dpi, 96);
     const int expected_overlay_height = MulDiv(overlay_height_dip, overlay_layout_dpi, 96);
-    if (!GetWindowRect(stats_overlay.Window(), &overlay_window_bounds) ||
+    if (!GetWindowRect(overlay_window, &overlay_window_bounds) ||
         overlay_window_bounds.right - overlay_window_bounds.left != expected_overlay_width ||
         overlay_window_bounds.bottom - overlay_window_bounds.top != expected_overlay_height) {
         throw std::runtime_error("Statistics overlay did not scale its layout for the monitor DPI.");
     }
-    const LONG_PTR overlay_style = GetWindowLongPtrW(stats_overlay.Window(), GWL_EXSTYLE);
+    const LONG_PTR overlay_style = GetWindowLongPtrW(overlay_window, GWL_EXSTYLE);
     constexpr LONG_PTR required_overlay_style =
         WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW;
     if ((overlay_style & required_overlay_style) != required_overlay_style ||
-        SendMessageW(stats_overlay.Window(), WM_NCHITTEST, 0, 0) != HTTRANSPARENT) {
+        SendMessageW(overlay_window, WM_NCHITTEST, 0, 0) != HTTRANSPARENT) {
         throw std::runtime_error("Statistics overlay did not preserve click-through behavior.");
     }
 
@@ -1065,7 +1075,7 @@ int RunFrameGeneration(const Options& options) {
             winrt::throw_last_error();
         }
     }
-    const auto initial_bounds = osss::ExtendedWindowBounds(target);
+    const auto initial_bounds = osss::ExtendedWindowBounds(osss::WindowHandle::FromNative(target));
     if (!initial_bounds) {
         throw std::runtime_error("The target is minimized or has no usable window bounds.");
     }
@@ -1099,7 +1109,7 @@ int RunFrameGeneration(const Options& options) {
     renderer.SetTemporalPriorEnabled(options.temporal_prior);
     osss::CaptureSession capture(renderer.Device());
     capture.Start(target, target_fps);
-    renderer.CreateOutputWindow(*initial_bounds, options.max_multiplier, target_fps);
+    renderer.CreateOutputWindow(ToRect(*initial_bounds), options.max_multiplier, target_fps);
     osss::StatsOverlay stats_overlay;
     const bool stats_overlay_wanted =
         options.stats_overlay && options.output_mode != osss::OutputMode::fullscreen;
@@ -1174,7 +1184,7 @@ int RunFrameGeneration(const Options& options) {
     std::uint64_t unpaced_last_real_sequence = 0;
 
     std::wcout
-        << L"Capturing: " << osss::WindowTitle(target) << L'\n'
+        << L"Capturing: " << osss::ToWide(osss::WindowTitle(osss::WindowHandle::FromNative(target))) << L'\n'
         << L"Adapter:   " << renderer.AdapterName() << L'\n'
         << L"Target:    " << std::fixed << std::setprecision(6) << target_fps << L" FPS  ("
         << resolved_target.rate.numerator << L"/" << resolved_target.rate.denominator << L")"
@@ -1614,7 +1624,7 @@ int RunFrameGeneration(const Options& options) {
         now = Clock::now();
         if (now - last_follow >= std::chrono::milliseconds(250)) {
             renderer.FollowTarget(target);
-            stats_overlay.FollowTarget(target);
+            stats_overlay.FollowTarget(osss::WindowHandle::FromNative(target));
             last_follow = now;
         }
 

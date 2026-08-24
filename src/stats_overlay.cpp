@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <dwmapi.h>
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <windows.h>
 
 namespace osss {
 namespace {
@@ -57,80 +59,171 @@ void DrawTextLine(
 
 } // namespace
 
-StatsOverlay::~StatsOverlay() {
-    Release();
-}
+struct StatsOverlay::Impl {
+    static constexpr wchar_t kWindowClassName[] = L"OSSS.StatsOverlay";
+    static constexpr UINT kDefaultDpi = 96;
+    static constexpr UINT kMinimumLayoutDpi = 72;
+    static constexpr int kOffsetDip = 14;
+    static constexpr int kWidthDip = 500;
+    static constexpr int kHeightDip = 216;
 
-bool StatsOverlay::Create(
-    const RECT& target_bounds,
-    const int max_multiplier,
-    const double target_fps,
-    const bool motion_enabled) {
-    Release();
-    max_multiplier_ = std::clamp(max_multiplier, 2, 6);
-    target_fps_ = std::max(0.0, target_fps);
-    motion_enabled_ = motion_enabled;
-    target_bounds_ = target_bounds;
+    ~Impl() {
+        Release();
+    }
 
-    const HINSTANCE instance = GetModuleHandleW(nullptr);
-    WNDCLASSEXW window_class{};
-    window_class.cbSize = sizeof(window_class);
-    window_class.lpfnWndProc = WindowProcedure;
-    window_class.hInstance = instance;
-    window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    window_class.lpszClassName = kWindowClassName;
-    if (RegisterClassExW(&window_class) == 0) {
-        if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+    [[nodiscard]] bool Create(
+        const IntRect& target_bounds,
+        const int max_multiplier,
+        const double target_fps,
+        const bool motion_enabled) {
+        Release();
+        max_multiplier_ = std::clamp(max_multiplier, 2, 6);
+        target_fps_ = std::max(0.0, target_fps);
+        motion_enabled_ = motion_enabled;
+        target_bounds_ = target_bounds;
+
+        const HINSTANCE instance = GetModuleHandleW(nullptr);
+        WNDCLASSEXW window_class{};
+        window_class.cbSize = sizeof(window_class);
+        window_class.lpfnWndProc = WindowProcedure;
+        window_class.hInstance = instance;
+        window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        window_class.lpszClassName = kWindowClassName;
+        if (RegisterClassExW(&window_class) == 0) {
+            if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+                return false;
+            }
+        } else {
+            window_class_registered_ = true;
+        }
+
+        window_ = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED,
+            kWindowClassName,
+            L"OSSS Performance",
+            WS_POPUP,
+            target_bounds_.x + kOffsetDip,
+            target_bounds_.y + kOffsetDip,
+            kWidthDip,
+            kHeightDip,
+            nullptr,
+            nullptr,
+            instance,
+            this);
+        if (!window_) {
+            Release();
             return false;
         }
-    } else {
-        window_class_registered_ = true;
+
+        if (!UpdateScale(GetDpiForWindow(window_), target_bounds_) ||
+            !SetLayeredWindowAttributes(window_, 0, 232, LWA_ALPHA)) {
+            Release();
+            return false;
+        }
+
+        Position(target_bounds_, false);
+        ApplyRoundedRegion(false);
+        return true;
     }
 
-    window_ = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED,
-        kWindowClassName,
-        L"OSSS Performance",
-        WS_POPUP,
-        target_bounds.left + kOffsetDip,
-        target_bounds.top + kOffsetDip,
-        kWidthDip,
-        kHeightDip,
-        nullptr,
-        nullptr,
-        instance,
-        this);
-    if (!window_) {
-        Release();
-        return false;
+    void Show() {
+        if (!window_ || visible_) {
+            return;
+        }
+        visible_ = true;
+        Position(target_bounds_, true);
+        InvalidateRect(window_, nullptr, FALSE);
     }
 
-    if (!UpdateScale(GetDpiForWindow(window_), target_bounds_) ||
-        !SetLayeredWindowAttributes(window_, 0, 232, LWA_ALPHA)) {
-        Release();
-        return false;
+    void Hide() {
+        if (!window_ || !visible_) {
+            return;
+        }
+        ShowWindow(window_, SW_HIDE);
+        visible_ = false;
     }
 
-    Position(target_bounds_, false);
-    ApplyRoundedRegion(false);
-    return true;
-}
+    void Update(const double source_fps, const double output_fps) {
+        RuntimeStats statistics{};
+        statistics.raw_capture_fps = source_fps;
+        statistics.unique_source_fps = source_fps;
+        statistics.target_fps = target_fps_;
+        statistics.submitted_fps = output_fps;
+        Update(statistics);
+    }
 
-int StatsOverlay::ScaleDip(const int value) const noexcept {
+    void Update(const RuntimeStats& statistics) {
+        statistics_ = statistics;
+        statistics_.raw_capture_fps = std::max(0.0, statistics_.raw_capture_fps);
+        statistics_.unique_source_fps = std::max(0.0, statistics_.unique_source_fps);
+        statistics_.target_fps = std::max(0.0, statistics_.target_fps);
+        statistics_.submitted_fps = std::max(0.0, statistics_.submitted_fps);
+        if (statistics_.confirmed_fps) {
+            statistics_.confirmed_fps = std::max(0.0, *statistics_.confirmed_fps);
+        }
+        statistics_.generated_share = std::clamp(statistics_.generated_share, 0.0, 1.0);
+        statistics_.pacing_on_time_fraction =
+            std::clamp(statistics_.pacing_on_time_fraction, 0.0, 1.0);
+        has_sample_ = true;
+        if (window_) {
+            InvalidateRect(window_, nullptr, FALSE);
+            UpdateWindow(window_);
+        }
+    }
+
+    void FollowTarget(const WindowHandle target) {
+        const HWND handle = reinterpret_cast<HWND>(target.Native());
+        if (const auto bounds = ExtendedWindowBounds(target)) {
+            const UINT previous_layout_dpi = layout_dpi_;
+            const bool scale_updated = UpdateScale(GetDpiForWindow(handle), *bounds);
+            Position(*bounds, visible_);
+            if (scale_updated && layout_dpi_ != previous_layout_dpi) {
+                ApplyRoundedRegion(true);
+                InvalidateRect(window_, nullptr, FALSE);
+            }
+        }
+    }
+
+    [[nodiscard]] HWND Window() const noexcept {
+        return window_;
+    }
+
+private:
+    static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+
+    [[nodiscard]] int ScaleDip(int value) const noexcept;
+    [[nodiscard]] bool UpdateScale(UINT monitor_dpi, const IntRect& target_bounds);
+    void ApplyRoundedRegion(bool redraw);
+    void HandleDpiChanged(UINT dpi, const RECT& suggested_bounds);
+    void Paint();
+    void Position(const IntRect& target_bounds, bool show);
+    void Release() noexcept;
+
+    HWND window_ = nullptr;
+    HFONT label_font_ = nullptr;
+    HFONT value_font_ = nullptr;
+    int max_multiplier_ = 2;
+    double target_fps_ = 60.0;
+    bool motion_enabled_ = true;
+    bool has_sample_ = false;
+    bool visible_ = false;
+    bool window_class_registered_ = false;
+    UINT layout_dpi_ = kDefaultDpi;
+    RuntimeStats statistics_{};
+    IntRect target_bounds_{};
+};
+
+int StatsOverlay::Impl::ScaleDip(const int value) const noexcept {
     return MulDiv(value, static_cast<int>(layout_dpi_), static_cast<int>(kDefaultDpi));
 }
 
-bool StatsOverlay::UpdateScale(UINT monitor_dpi, const RECT& target_bounds) {
+bool StatsOverlay::Impl::UpdateScale(UINT monitor_dpi, const IntRect& target_bounds) {
     if (monitor_dpi == 0) {
         monitor_dpi = kDefaultDpi;
     }
 
-    const int target_width = std::max(
-        1,
-        static_cast<int>(target_bounds.right - target_bounds.left));
-    const int target_height = std::max(
-        1,
-        static_cast<int>(target_bounds.bottom - target_bounds.top));
+    const int target_width = std::max(1, target_bounds.width);
+    const int target_height = std::max(1, target_bounds.height);
     const int width_fit_dpi = static_cast<int>(
         static_cast<std::int64_t>(target_width) * kDefaultDpi /
         (kWidthDip + 2 * kOffsetDip));
@@ -199,7 +292,7 @@ bool StatsOverlay::UpdateScale(UINT monitor_dpi, const RECT& target_bounds) {
     return true;
 }
 
-void StatsOverlay::ApplyRoundedRegion(const bool redraw) {
+void StatsOverlay::Impl::ApplyRoundedRegion(const bool redraw) {
     if (!window_) {
         return;
     }
@@ -215,7 +308,7 @@ void StatsOverlay::ApplyRoundedRegion(const bool redraw) {
     }
 }
 
-void StatsOverlay::HandleDpiChanged(const UINT dpi, const RECT& suggested_bounds) {
+void StatsOverlay::Impl::HandleDpiChanged(const UINT dpi, const RECT& suggested_bounds) {
     if (!window_ || !UpdateScale(dpi, target_bounds_)) {
         return;
     }
@@ -231,100 +324,7 @@ void StatsOverlay::HandleDpiChanged(const UINT dpi, const RECT& suggested_bounds
     InvalidateRect(window_, nullptr, FALSE);
 }
 
-void StatsOverlay::Show() {
-    if (!window_ || visible_) {
-        return;
-    }
-    visible_ = true;
-    Position(target_bounds_, true);
-    InvalidateRect(window_, nullptr, FALSE);
-}
-
-void StatsOverlay::Update(const double source_fps, const double output_fps) {
-    RuntimeStats statistics{};
-    statistics.raw_capture_fps = source_fps;
-    statistics.unique_source_fps = source_fps;
-    statistics.target_fps = target_fps_;
-    statistics.submitted_fps = output_fps;
-    Update(statistics);
-}
-
-void StatsOverlay::Update(const RuntimeStats& statistics) {
-    statistics_ = statistics;
-    statistics_.raw_capture_fps = std::max(0.0, statistics_.raw_capture_fps);
-    statistics_.unique_source_fps = std::max(0.0, statistics_.unique_source_fps);
-    statistics_.target_fps = std::max(0.0, statistics_.target_fps);
-    statistics_.submitted_fps = std::max(0.0, statistics_.submitted_fps);
-    if (statistics_.confirmed_fps) {
-        statistics_.confirmed_fps = std::max(0.0, *statistics_.confirmed_fps);
-    }
-    statistics_.generated_share = std::clamp(statistics_.generated_share, 0.0, 1.0);
-    statistics_.pacing_on_time_fraction =
-        std::clamp(statistics_.pacing_on_time_fraction, 0.0, 1.0);
-    has_sample_ = true;
-    if (window_) {
-        InvalidateRect(window_, nullptr, FALSE);
-        UpdateWindow(window_);
-    }
-}
-
-void StatsOverlay::FollowTarget(const HWND target) {
-    if (const auto bounds = ExtendedWindowBounds(target)) {
-        const UINT previous_layout_dpi = layout_dpi_;
-        const bool scale_updated = UpdateScale(GetDpiForWindow(target), *bounds);
-        Position(*bounds, visible_);
-        if (scale_updated && layout_dpi_ != previous_layout_dpi) {
-            ApplyRoundedRegion(true);
-            InvalidateRect(window_, nullptr, FALSE);
-        }
-    }
-}
-
-HWND StatsOverlay::Window() const noexcept {
-    return window_;
-}
-
-LRESULT CALLBACK StatsOverlay::WindowProcedure(
-    const HWND window,
-    const UINT message,
-    const WPARAM wparam,
-    const LPARAM lparam) {
-    auto* overlay = reinterpret_cast<StatsOverlay*>(GetWindowLongPtrW(window, GWLP_USERDATA));
-    if (message == WM_NCCREATE) {
-        const auto* create = reinterpret_cast<CREATESTRUCTW*>(lparam);
-        overlay = static_cast<StatsOverlay*>(create->lpCreateParams);
-        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(overlay));
-    }
-
-    switch (message) {
-    case WM_PAINT:
-        if (overlay) {
-            overlay->Paint();
-            return 0;
-        }
-        break;
-    case WM_DPICHANGED:
-        if (overlay) {
-            const auto* suggested_bounds = reinterpret_cast<const RECT*>(lparam);
-            if (suggested_bounds) {
-                overlay->HandleDpiChanged(HIWORD(wparam), *suggested_bounds);
-            }
-            return 0;
-        }
-        break;
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_NCHITTEST:
-        return HTTRANSPARENT;
-    case WM_MOUSEACTIVATE:
-        return MA_NOACTIVATE;
-    default:
-        break;
-    }
-    return DefWindowProcW(window, message, wparam, lparam);
-}
-
-void StatsOverlay::Paint() {
+void StatsOverlay::Impl::Paint() {
     if (!window_) {
         return;
     }
@@ -429,15 +429,7 @@ void StatsOverlay::Paint() {
     EndPaint(window_, &paint);
 }
 
-void StatsOverlay::Hide() {
-    if (!window_ || !visible_) {
-        return;
-    }
-    ShowWindow(window_, SW_HIDE);
-    visible_ = false;
-}
-
-void StatsOverlay::Position(const RECT& target_bounds, const bool show) {
+void StatsOverlay::Impl::Position(const IntRect& target_bounds, const bool show) {
     if (!window_) {
         return;
     }
@@ -445,14 +437,14 @@ void StatsOverlay::Position(const RECT& target_bounds, const bool show) {
     SetWindowPos(
         window_,
         HWND_TOPMOST,
-        target_bounds.left + ScaleDip(kOffsetDip),
-        target_bounds.top + ScaleDip(kOffsetDip),
+        target_bounds_.x + ScaleDip(kOffsetDip),
+        target_bounds_.y + ScaleDip(kOffsetDip),
         ScaleDip(kWidthDip),
         ScaleDip(kHeightDip),
         SWP_NOACTIVATE | (show ? SWP_SHOWWINDOW : SWP_NOREDRAW));
 }
 
-void StatsOverlay::Release() noexcept {
+void StatsOverlay::Impl::Release() noexcept {
     if (window_) {
         if (IsWindow(window_)) {
             DestroyWindow(window_);
@@ -474,6 +466,92 @@ void StatsOverlay::Release() noexcept {
     visible_ = false;
     has_sample_ = false;
     layout_dpi_ = kDefaultDpi;
+}
+
+LRESULT CALLBACK StatsOverlay::Impl::WindowProcedure(
+    HWND window,
+    const UINT message,
+    const WPARAM wparam,
+    const LPARAM lparam) {
+    auto* impl = reinterpret_cast<Impl*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (message == WM_NCCREATE) {
+        const auto* create = reinterpret_cast<CREATESTRUCTW*>(lparam);
+        impl = static_cast<Impl*>(create->lpCreateParams);
+        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(impl));
+    }
+
+    switch (message) {
+    case WM_PAINT:
+        if (impl) {
+            impl->Paint();
+            return 0;
+        }
+        break;
+    case WM_DPICHANGED:
+        if (impl) {
+            const auto* suggested_bounds = reinterpret_cast<const RECT*>(lparam);
+            if (suggested_bounds) {
+                impl->HandleDpiChanged(HIWORD(wparam), *suggested_bounds);
+            }
+            return 0;
+        }
+        break;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_NCHITTEST:
+        return HTTRANSPARENT;
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+    default:
+        break;
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
+StatsOverlay::StatsOverlay() = default;
+StatsOverlay::~StatsOverlay() = default;
+
+bool StatsOverlay::Create(
+    const IntRect& target_bounds,
+    const int max_multiplier,
+    const double target_fps,
+    const bool motion_enabled) {
+    impl_ = std::make_unique<Impl>();
+    return impl_->Create(target_bounds, max_multiplier, target_fps, motion_enabled);
+}
+
+void StatsOverlay::Show() {
+    if (impl_) {
+        impl_->Show();
+    }
+}
+
+void StatsOverlay::Hide() {
+    if (impl_) {
+        impl_->Hide();
+    }
+}
+
+void StatsOverlay::Update(const double source_fps, const double output_fps) {
+    if (impl_) {
+        impl_->Update(source_fps, output_fps);
+    }
+}
+
+void StatsOverlay::Update(const RuntimeStats& statistics) {
+    if (impl_) {
+        impl_->Update(statistics);
+    }
+}
+
+void StatsOverlay::FollowTarget(const WindowHandle target) {
+    if (impl_) {
+        impl_->FollowTarget(target);
+    }
+}
+
+WindowHandle StatsOverlay::Window() const noexcept {
+    return impl_ ? WindowHandle::FromNative(impl_->Window()) : WindowHandle{};
 }
 
 } // namespace osss

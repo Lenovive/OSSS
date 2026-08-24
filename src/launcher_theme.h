@@ -1,6 +1,7 @@
 #pragma once
 
-#include <windows.h>
+#include "platform/int_rect.h"
+#include "platform/rgb_color.h"
 
 namespace osss {
 
@@ -11,38 +12,39 @@ namespace osss {
 // every colour in that repaint comes from the same set, so a routine cannot
 // read the light field colour onto a dark background halfway down the window.
 struct LauncherPalette {
-    COLORREF background;
-    COLORREF surface;
-    COLORREF foreground;
-    COLORREF foreground_muted;
-    COLORREF foreground_faint;
-    COLORREF line;
-    COLORREF field;
-    COLORREF field_line;
-    COLORREF band;
-    COLORREF accent;
-    COLORREF accent_foreground;
-    COLORREF tooltip_background;
-    COLORREF tooltip_foreground;
-    COLORREF tooltip_line;
+    RgbColor background;
+    RgbColor surface;
+    RgbColor foreground;
+    RgbColor foreground_muted;
+    RgbColor foreground_faint;
+    RgbColor line;
+    RgbColor field;
+    RgbColor field_line;
+    RgbColor band;
+    RgbColor accent;
+    RgbColor accent_foreground;
+    RgbColor tooltip_background;
+    RgbColor tooltip_foreground;
+    RgbColor tooltip_line;
     // Status-panel state colours. These are the only three colours in the
     // launcher that carry meaning rather than structure.
-    COLORREF ok;
-    COLORREF warning;
-    COLORREF failure;
+    RgbColor ok;
+    RgbColor warning;
+    RgbColor failure;
 };
 
 [[nodiscard]] LauncherPalette LauncherPaletteFor(bool dark) noexcept;
 
-// Reads HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize
-// \AppsUseLightTheme. A missing or unreadable value is light, which is what
-// Windows itself falls back to. There is deliberately no in-app switch: the
+// On Windows this reads HKCU\Software\Microsoft\Windows\CurrentVersion\Themes
+// \Personalize\AppsUseLightTheme; a missing or unreadable value is light, which
+// is what Windows itself falls back to. Other platforms have no equivalent
+// switch and report light. There is deliberately no in-app switch: the
 // launcher follows the system and nothing else.
 [[nodiscard]] bool SystemPrefersDarkApps() noexcept;
 
 // Mixes a colour toward white (positive percent) or black (negative), for hover
 // and pressed states that have no token of their own.
-[[nodiscard]] COLORREF ShadeColor(COLORREF color, int percent) noexcept;
+[[nodiscard]] RgbColor ShadeColor(RgbColor color, int percent) noexcept;
 
 // Advances a y cursor and hands out control rects, in logical pixels at 96 DPI
 // -- the same units the launcher's CreateControl scales by the window DPI.
@@ -87,24 +89,16 @@ public:
 
     // A full-width row. Advances the cursor past it, because a full-width row
     // can have nothing beside it.
-    [[nodiscard]] RECT Row(int height) noexcept;
+    [[nodiscard]] IntRect Row(int height) noexcept;
 
     // One column of an `of`-column row at the current cursor. Deliberately does
     // not advance: the columns of a row share a y, so the caller ends the row
     // with Gap(height). Column widths absorb the division remainder from the
     // right, so the last column's right edge always lands on kContentRight.
-    [[nodiscard]] RECT Column(int index, int of, int height) const noexcept;
+    [[nodiscard]] IntRect Column(int index, int of, int height) const noexcept;
 
 private:
     int cursor_ = 0;
 };
-
-[[nodiscard]] constexpr int RectWidth(const RECT& rect) noexcept {
-    return rect.right - rect.left;
-}
-
-[[nodiscard]] constexpr int RectHeight(const RECT& rect) noexcept {
-    return rect.bottom - rect.top;
-}
 
 } // namespace osss

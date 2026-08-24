@@ -2,11 +2,15 @@
 
 #include <algorithm>
 
+#if defined(_WIN32)
+#  include <windows.h>
+#endif
+
 namespace osss {
 namespace {
 
-constexpr COLORREF Rgb(const int red, const int green, const int blue) noexcept {
-    return RGB(red, green, blue);
+constexpr RgbColor Rgb(const std::uint8_t red, const std::uint8_t green, const std::uint8_t blue) noexcept {
+    return RgbColor{red, green, blue};
 }
 
 } // namespace
@@ -55,6 +59,7 @@ LauncherPalette LauncherPaletteFor(const bool dark) noexcept {
 }
 
 bool SystemPrefersDarkApps() noexcept {
+#if defined(_WIN32)
     DWORD value = 1;
     DWORD size = sizeof(value);
     const LSTATUS status = RegGetValueW(
@@ -69,29 +74,31 @@ bool SystemPrefersDarkApps() noexcept {
         return false;
     }
     return value == 0;
+#else
+    return false;
+#endif
 }
 
-COLORREF ShadeColor(const COLORREF color, const int percent) noexcept {
+RgbColor ShadeColor(const RgbColor color, const int percent) noexcept {
     const auto mix = [percent](const int channel) {
         const int target = percent >= 0 ? 255 : 0;
         const int weight = std::clamp(percent < 0 ? -percent : percent, 0, 100);
         return std::clamp(channel + (target - channel) * weight / 100, 0, 255);
     };
-    return RGB(mix(GetRValue(color)), mix(GetGValue(color)), mix(GetBValue(color)));
+    return RgbColor{
+        static_cast<std::uint8_t>(mix(color.red)),
+        static_cast<std::uint8_t>(mix(color.green)),
+        static_cast<std::uint8_t>(mix(color.blue)),
+    };
 }
 
-RECT LauncherLayout::Row(const int height) noexcept {
-    const RECT rect{
-        kContentLeft,
-        cursor_,
-        kContentRight,
-        cursor_ + height,
-    };
+IntRect LauncherLayout::Row(const int height) noexcept {
+    const IntRect rect{kContentLeft, cursor_, kContentWidth, height};
     cursor_ += height;
     return rect;
 }
 
-RECT LauncherLayout::Column(const int index, const int of, const int height) const noexcept {
+IntRect LauncherLayout::Column(const int index, const int of, const int height) const noexcept {
     const int columns = std::max(of, 1);
     const int clamped = std::clamp(index, 0, columns - 1);
     const int usable = kContentWidth - (columns - 1) * kGutter;
@@ -107,7 +114,7 @@ RECT LauncherLayout::Column(const int index, const int of, const int height) con
         left += base + (column >= wider_from ? 1 : 0) + kGutter;
     }
     const int width = base + (clamped >= wider_from ? 1 : 0);
-    return RECT{left, cursor_, left + width, cursor_ + height};
+    return IntRect{left, cursor_, width, height};
 }
 
 } // namespace osss

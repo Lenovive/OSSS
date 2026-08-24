@@ -1,11 +1,12 @@
 #pragma once
 
 #include "adaptive_scheduler.h"
-
-#include <windows.h>
+#include "platform/int_rect.h"
+#include "platform/window_handle.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 
 namespace osss {
@@ -102,16 +103,26 @@ struct RuntimeStats {
     FrameSelectionCounters selection_cumulative{};
 };
 
+// The click-through performance HUD drawn over the target window.
+//
+// The platform window (creation, DPI scaling, the rounded region, the paint)
+// lives behind the pimpl: the public surface is neutral types only, so this
+// header compiles on every platform and the tests can use GeneratedFrameShare
+// and RuntimeStats without dragging a windowing API into the core.
 class StatsOverlay {
 public:
-    StatsOverlay() = default;
+    // Both special members are defined in the one translation unit that knows
+    // Impl: a defaulted constructor defined here would make MSVC instantiate
+    // the unique_ptr's destructor (and its delete of the incomplete Impl) in
+    // every consumer.
+    StatsOverlay();
     ~StatsOverlay();
 
     StatsOverlay(const StatsOverlay&) = delete;
     StatsOverlay& operator=(const StatsOverlay&) = delete;
 
     [[nodiscard]] bool Create(
-        const RECT& target_bounds,
+        const IntRect& target_bounds,
         int max_multiplier,
         double target_fps,
         bool motion_enabled);
@@ -120,40 +131,13 @@ public:
     void Hide();
     void Update(double source_fps, double output_fps);
     void Update(const RuntimeStats& statistics);
-    void FollowTarget(HWND target);
+    void FollowTarget(WindowHandle target);
 
-    [[nodiscard]] HWND Window() const noexcept;
+    [[nodiscard]] WindowHandle Window() const noexcept;
 
 private:
-    static constexpr wchar_t kWindowClassName[] = L"OSSS.StatsOverlay";
-    static constexpr UINT kDefaultDpi = 96;
-    static constexpr UINT kMinimumLayoutDpi = 72;
-    static constexpr int kOffsetDip = 14;
-    static constexpr int kWidthDip = 500;
-    static constexpr int kHeightDip = 216;
-
-    static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
-
-    [[nodiscard]] int ScaleDip(int value) const noexcept;
-    [[nodiscard]] bool UpdateScale(UINT monitor_dpi, const RECT& target_bounds);
-    void ApplyRoundedRegion(bool redraw);
-    void HandleDpiChanged(UINT dpi, const RECT& suggested_bounds);
-    void Paint();
-    void Position(const RECT& target_bounds, bool show);
-    void Release() noexcept;
-
-    HWND window_ = nullptr;
-    HFONT label_font_ = nullptr;
-    HFONT value_font_ = nullptr;
-    int max_multiplier_ = 2;
-    double target_fps_ = 60.0;
-    bool motion_enabled_ = true;
-    bool has_sample_ = false;
-    bool visible_ = false;
-    bool window_class_registered_ = false;
-    UINT layout_dpi_ = kDefaultDpi;
-    RuntimeStats statistics_{};
-    RECT target_bounds_{};
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 } // namespace osss

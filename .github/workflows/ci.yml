@@ -31,6 +31,9 @@ on:
 jobs:
   build-and-test:
     name: Build (MSVC x64) and run GPU-less tests
+    # The full suite on the platform OSSS runs on today: capture, GPU, and
+    # overlay are all Windows implementations, so only the environment-scoped
+    # tests above are excluded.
     runs-on: windows-latest
 
     steps:
@@ -56,3 +59,41 @@ jobs:
           ctest --test-dir out/ci -C Release
           -E "osss_motion_tests|osss_interpolation_quality_tests|osss_upscaler_tests|osss_gui_tests"
           --output-on-failure
+
+  # On non-Windows platforms the only targets that exist are osss_core,
+  # osss_test_pattern, and their test executables (the capture/GPU/overlay
+  # targets are Windows-only until their Phase 2/3 backends land), so there is
+  # nothing to exclude: every registered test is one that runs unattended.
+  # Single-config generator, so no -A/--config on any of these.
+
+  build-and-test-macos:
+    name: Build (AppleClang) and run core tests
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake -S . -B out/ci -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build out/ci
+
+      - name: Test
+        run: ctest --test-dir out/ci --output-on-failure
+
+  build-and-test-linux:
+    name: Build (GCC) and run core tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake -S . -B out/ci -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build out/ci
+
+      - name: Test
+        run: ctest --test-dir out/ci --output-on-failure

@@ -20,7 +20,7 @@ namespace {
 
 using osss::test::Require;
 
-osss::WindowEntry Entry(const wchar_t* process_name, const wchar_t* title) {
+osss::WindowEntry Entry(const char* process_name, const char* title) {
     osss::WindowEntry entry;
     entry.process_name = process_name;
     entry.title = title;
@@ -33,23 +33,23 @@ osss::WindowEntry Entry(const wchar_t* process_name, const wchar_t* title) {
 std::vector<osss::WindowEntry> TerminalCollisionDesktop() {
     return {
         Entry(
-            L"osss_test_animation.exe",
-            L"OSSS Test Animation | Direct3D 11 | 60 FPS | S score | B burst"),
+            "osss_test_animation.exe",
+            "OSSS Test Animation | Direct3D 11 | 60 FPS | S score | B burst"),
         Entry(
-            L"WindowsTerminal.exe",
-            L"C:\\Users\\user\\Desktop\\OSSS\\out\\release\\osss_test_animation.exe"),
+            "WindowsTerminal.exe",
+            "C:\\Users\\user\\Desktop\\OSSS\\out\\release\\osss_test_animation.exe"),
     };
 }
 
 void TestExecutableMatchBeatsATitleMatch() {
     const auto matches =
-        osss::SelectWindowsMatching(TerminalCollisionDesktop(), L"osss_test_animation");
+        osss::SelectWindowsMatching(TerminalCollisionDesktop(), "osss_test_animation");
     Require(
         matches.size() == 1,
         "A fragment naming an executable must resolve to one window, not " +
             std::to_string(matches.size()) + ".");
     Require(
-        matches.front().process_name == L"osss_test_animation.exe",
+        matches.front().process_name == "osss_test_animation.exe",
         "The surviving match must be the application, not the shell that launched it.");
 }
 
@@ -58,71 +58,71 @@ void TestExecutableMatchBeatsATitleMatch() {
 // same window, so preferring the executable still finds it.
 void TestAnAppNamedFragmentStillFindsAWindowTitledAfterItsDocument() {
     const std::vector<osss::WindowEntry> desktop = {
-        Entry(L"vlc.exe", L"movie.mkv - VLC media player"),
-        Entry(L"explorer.exe", L"Downloads"),
+        Entry("vlc.exe", "movie.mkv - VLC media player"),
+        Entry("explorer.exe", "Downloads"),
     };
-    const auto matches = osss::SelectWindowsMatching(desktop, L"vlc");
+    const auto matches = osss::SelectWindowsMatching(desktop, "vlc");
     Require(matches.size() == 1, "--title vlc must resolve to the VLC window.");
-    Require(matches.front().process_name == L"vlc.exe", "Wrong window selected for vlc.");
+    Require(matches.front().process_name == "vlc.exe", "Wrong window selected for vlc.");
 }
 
 // And the case that requires the title fallback to survive: a fragment naming
 // the document, which no executable name contains.
 void TestADocumentNamedFragmentFallsBackToTitles() {
     const std::vector<osss::WindowEntry> desktop = {
-        Entry(L"vlc.exe", L"movie.mkv - VLC media player"),
-        Entry(L"notepad.exe", L"notes.txt"),
+        Entry("vlc.exe", "movie.mkv - VLC media player"),
+        Entry("notepad.exe", "notes.txt"),
     };
-    const auto matches = osss::SelectWindowsMatching(desktop, L"movie.mkv");
+    const auto matches = osss::SelectWindowsMatching(desktop, "movie.mkv");
     Require(matches.size() == 1, "A document fragment must still match by title.");
-    Require(matches.front().process_name == L"vlc.exe", "Wrong window selected for movie.mkv.");
+    Require(matches.front().process_name == "vlc.exe", "Wrong window selected for movie.mkv.");
 }
 
 // Genuine ambiguity must stay ambiguous: two windows of the same application
 // are a real choice the caller has to make with --hwnd.
 void TestTwoWindowsOfOneApplicationStayAmbiguous() {
     const std::vector<osss::WindowEntry> desktop = {
-        Entry(L"chrome.exe", L"Inbox"),
-        Entry(L"chrome.exe", L"Docs"),
-        Entry(L"WindowsTerminal.exe", L"chrome.exe --headless"),
+        Entry("chrome.exe", "Inbox"),
+        Entry("chrome.exe", "Docs"),
+        Entry("WindowsTerminal.exe", "chrome.exe --headless"),
     };
-    const auto matches = osss::SelectWindowsMatching(desktop, L"chrome");
+    const auto matches = osss::SelectWindowsMatching(desktop, "chrome");
     Require(
         matches.size() == 2,
         "Two windows of one application must remain ambiguous, got " +
             std::to_string(matches.size()) + ".");
     for (const osss::WindowEntry& entry : matches) {
         Require(
-            entry.process_name == L"chrome.exe",
+            entry.process_name == "chrome.exe",
             "The terminal must not survive alongside real executable matches.");
     }
 }
 
 void TestMatchingIsCaseInsensitive() {
     const auto matches =
-        osss::SelectWindowsMatching(TerminalCollisionDesktop(), L"OSSS_Test_Animation");
+        osss::SelectWindowsMatching(TerminalCollisionDesktop(), "OSSS_Test_Animation");
     Require(matches.size() == 1, "Matching must ignore case.");
 }
 
 void TestNoMatchAndEmptyFragment() {
     Require(
-        osss::SelectWindowsMatching(TerminalCollisionDesktop(), L"firefox").empty(),
+        osss::SelectWindowsMatching(TerminalCollisionDesktop(), "firefox").empty(),
         "A fragment matching nothing must return nothing.");
     // An empty fragment matches every string, which would silently resolve to
     // an arbitrary window. It must select nothing instead.
     Require(
-        osss::SelectWindowsMatching(TerminalCollisionDesktop(), L"").empty(),
+        osss::SelectWindowsMatching(TerminalCollisionDesktop(), "").empty(),
         "An empty fragment must not match every window.");
 }
 
 // A process whose executable could not be read has an empty process_name.
-// std::wstring::find of a non-empty needle in an empty string fails, so these
+// std::string::find of a non-empty needle in an empty string fails, so these
 // fall through to the title, which is the only thing known about them.
 void TestUnidentifiedProcessesMatchByTitleOnly() {
     const std::vector<osss::WindowEntry> desktop = {
-        Entry(L"", L"Protected Content Player"),
+        Entry("", "Protected Content Player"),
     };
-    const auto matches = osss::SelectWindowsMatching(desktop, L"protected");
+    const auto matches = osss::SelectWindowsMatching(desktop, "protected");
     Require(matches.size() == 1, "A window with no readable executable must match by title.");
 }
 

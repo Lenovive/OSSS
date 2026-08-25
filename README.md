@@ -10,25 +10,49 @@
 > [@Lenovive](https://github.com/Lenovive). See [Authorship](#authorship).
 
 OSSS (Open Source Super Scaler) is an experimental, window-level
-frame-generation and upscaling pipeline for Windows. It captures an ordinary
-window, estimates screen-space motion on the GPU, and fills a chosen output-FPS
-target without injecting code into the target.
+frame-generation and upscaling pipeline. The Windows backend captures an
+ordinary window with Windows Graphics Capture and estimates screen-space motion
+on the GPU. macOS and Linux use the portable desktop backend (CoreGraphics /
+Cocoa and X11 respectively) with dependency-free software motion estimation.
+All backends fill a chosen output-FPS target without injecting code into the
+target.
 
-It is MIT-licensed, has **no third-party dependencies** of any kind, and is
-built to be read, forked, and tinkered with: C++20, CMake, and raw D3D11/HLSL,
-with every shader inline in the source file that uses it.
+It is MIT-licensed, has **no vendored third-party dependencies**, and is built to
+be read, forked, and tinkered with: C++20 and CMake. The Windows high-fidelity
+path uses raw D3D11/HLSL; the portable path uses the platform SDK plus a
+software fallback so it remains usable without a GPU API shared by all systems.
 
 New here? [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the data flow
 and who owns which decision; [CONTRIBUTING.md](CONTRIBUTING.md) covers building
 and the definition of done for a change.
 
+## Compatibility
+
+OSSS is intended to be compatible with all of the following:
+
+| Platform | Backend | Compatibility target |
+| --- | --- | --- |
+| Windows 10/11 | Windows Graphics Capture + Direct3D 11/HLSL | NVIDIA, AMD, and Intel GPUs that expose Direct3D feature level 11.0 and typed UAV access to `R32G32B32A32_FLOAT` |
+| macOS 12 or newer | CoreGraphics capture + Cocoa presentation + software interpolation | Intel and Apple Silicon Macs supported by the platform SDK |
+| Linux | X11/Xext capture and presentation + software interpolation | X11 desktops on standard x86-64 or arm64 Linux systems |
+
+The Windows GPU path is vendor-neutral by design and **should work on NVIDIA,
+AMD, and Intel hardware meeting the feature requirements**. Current physical
+GPU measurements are from an NVIDIA RTX 5090; AMD and Intel remain intended,
+compatible hardware targets rather than hardware-validated performance claims.
+macOS and Linux builds are compiled and tested in CI, while live desktop visual
+acceptance on representative machines remains open. Linux Wayland needs a
+separate portal/PipeWire backend and is not included in this release.
+
 ## Current state
 
-- Captures a visible window through Windows Graphics Capture.
-- Keeps a bounded history of up to eight unique captured frames on the GPU with
-  Direct3D 11.
-- Presents through a borderless, click-through output window without injecting
-  code into the target process.
+- Captures a visible window through Windows Graphics Capture on Windows,
+  CoreGraphics on macOS, or X11 on Linux.
+- Keeps a bounded history of up to eight unique captured frames. Windows stores
+  the history on the D3D11 device; portable builds keep it in owned CPU frames.
+- Presents through a borderless output window without injecting code into the
+  target process. Windows and macOS use click-through surfaces; the X11 backend
+  uses an empty input shape for the same behaviour.
 - Owns presentation with a fixed rational target clock. Automatic mode retains
   the active display path's numerator/denominator; manual targets remain
   available from 24 through 1000 FPS.
@@ -40,7 +64,7 @@ and the definition of done for a change.
   plus an adaptive jitter budget whose default floor is 8 ms, then each target deadline selects two known
   timestamped endpoints and a fractional alpha in `[0, 1]`. It never
   extrapolates.
-- Treats the selectable `2x` through `6x` multiplier as a ceiling, not a pacing
+- Treats the selectable `2x` through `20x` multiplier as a ceiling, not a pacing
   mode. The default is `6x`, which covers common fractional cases such as
   60→144 (`2.4x`). When that ceiling binds, production defaults to an even
   cadence; `--ceiling-pacing spread` retains the historical distributed gate
@@ -57,7 +81,8 @@ and the definition of done for a change.
   per-frame allocation churn.
 - Requests capture updates at the output-target cadence on Windows builds that
   expose the high-rate capture-session interval control.
-- Uses a vendor-neutral Direct3D 11/HLSL motion backend by default:
+- Uses a vendor-neutral Direct3D 11/HLSL motion backend by default on Windows,
+  and a bounded global-motion software backend on portable builds:
   - bidirectional coarse-to-fine optical flow over a mip-chained luma pyramid,
     refined to a quarter pixel and then to the vertex of the match-error curve;
   - one flow estimate per source pair, reused for every generated position;
@@ -69,6 +94,10 @@ and the definition of done for a change.
     count toward scene-cut detection;
   - optional automatic detection of static overlays, which masks regions that
     hold still while the scene around them moves.
+- Portable builds support explicit `--ui-mask` rectangles through the same
+  rasterized coverage path. The automatic HUD detector, dense flow debug views,
+  and GPU-only quality controls remain Windows-backend features; portable
+  command-line use reports those limitations rather than pretending CPU parity.
 - Falls back to temporal blending if motion setup or estimation fails, and
   exposes the blend path explicitly for A/B comparisons.
 - Preserves the operating-system cursor instead of interpolating it.
@@ -99,12 +128,23 @@ that is the tool for an artifact you can see but not score.
 
 ## Requirements
 
+Windows high-fidelity backend:
+
 - Windows 10 version 2004 or newer; Windows 11 is the primary target.
 - A GPU and driver exposing Direct3D feature level 11.0 plus typed UAV access
   to `R32G32B32A32_FLOAT` textures.
 - Visual Studio 2022 Build Tools with the Desktop C++ workload.
-- CMake 3.25 or newer.
-- A visible, restored target running windowed or borderless.
+
+Portable backend:
+
+- macOS 12 or newer with Screen Recording permission for OSSS (CoreGraphics /
+  Cocoa).
+- Linux with an X11 desktop and the X11/Xext development packages. XRandR
+  development headers are optional and improve automatic refresh discovery.
+  Wayland capture is not exposed by X11 and is reported as unavailable rather
+  than silently capturing the wrong surface.
+
+All builds require CMake 3.25 or newer and a visible, restored target window.
 
 ## Build
 
@@ -127,9 +167,37 @@ cmake --build --preset vs2022-release
 ctest --preset vs2022-release
 ```
 
-Verify the build without needing a target window. This checks the adapter,
-compiles and initializes the motion shaders, validates the overlay and
-click-through window styles, and exercises the output clock:
+On macOS or Linux, use the native generator and the portable targets:
+
+```sh
+cmake -S . -B out/portable-release -DCMAKE_BUILD_TYPE=Release
+cmake --build out/portable-release
+ctest --test-dir out/portable-release --output-on-failure
+```
+
+The live portable command line shares the common target, multiplier, buffer,
+ceiling, pacing, interpolation, and explicit-mask options with the Windows
+one. Present-mode selection is advisory because the X11/Cocoa presenters do
+not expose DXGI-style vsync/tearing switches; queued pacing retains scheduler
+lookahead but cannot provide a native swap-chain frame-latency contract:
+
+```sh
+./out/portable-release/osss --list-windows
+./out/portable-release/osss --title "your window" --target-fps 120
+```
+
+Use `osss_gui` for the small terminal launcher, or press Ctrl+C to stop a live
+portable session. On macOS, grant OSSS Screen Recording access before capture;
+on Linux, use an X11 session with the X11/Xext development packages installed.
+Portable telemetry is printed to the terminal (`--stats-overlay on|off`); the
+Windows-only native HUD and settings window are not implied by the terminal
+launcher. GPU-only controls such as `--flow-scale`, `--upscale`, and
+`--debug-view` fail with an explicit backend message instead of being silently
+ignored.
+
+On Windows, verify the high-fidelity backend without needing a target window.
+This checks the adapter, compiles and initializes the motion shaders, validates
+the overlay and click-through window styles, and exercises the output clock:
 
 ```powershell
 .\out\release\osss.exe --self-test
@@ -1016,9 +1084,10 @@ extrapolation is attempted.
 - Flow runs at quarter resolution through 1440p and eighth resolution above
   it. Large/ambiguous motion, thin geometry, and newly revealed regions can
   still smear, split, or fall back to blending.
-- SDR and one GPU are the current design target. The shader path is not tied to
-  a GPU vendor, but this checkout has only been run on an NVIDIA RTX 5090; AMD
-  and Intel hardware validation remains open.
+- SDR and one GPU are the current Windows design target. The vendor-neutral
+  D3D11/HLSL path should run on compatible NVIDIA, AMD, and Intel GPUs, but
+  current physical measurements are from an NVIDIA RTX 5090; representative
+  AMD and Intel performance and visual validation remain open.
 - HDR, VRR-aware pacing, exclusive fullscreen, protected content, and
   anti-cheat compatibility are not claimed. Exclusive fullscreen is detected and
   warned about at startup, not supported.
@@ -1055,8 +1124,9 @@ trust it, and because the alternative — letting you assume otherwise — is
 worse. Two things follow from it, and both cut in your favour:
 
 - **Verify rather than trust.** Nothing here asks you to take a claim on
-  authority. `ctest --preset release` is 16 tests, `osss.exe --self-test`
-  compiles every shader, and the quality numbers come from
+  authority. The Release suites currently contain 16 Windows tests and 13
+  portable tests, `osss.exe --self-test` compiles every Windows shader, and the
+  quality numbers come from
   `osss_interpolation_quality_tests --report`, which scores the interpolator
   against an analytic ground truth and against the plain crossfade it has to
   beat. Run them. Where a measurement came from one machine, this repository
@@ -1099,6 +1169,6 @@ please bring them.
 [MIT](LICENSE) — Copyright (c) 2026 Joe Olson and contributors. Use it, fork
 it, ship it, sell it; just keep the copyright notice.
 
-OSSS has no third-party source or binary dependencies; it links only Windows
-system libraries supplied by the OS and the Windows SDK. [NOTICE.md](NOTICE.md)
-lists exactly which ones and why.
+OSSS vendors no third-party source or binary libraries. It links only the
+system and platform-SDK libraries for Windows, macOS, or Linux.
+[NOTICE.md](NOTICE.md) lists exactly which ones and why.

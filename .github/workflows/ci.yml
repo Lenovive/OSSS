@@ -31,9 +31,8 @@ on:
 jobs:
   build-and-test:
     name: Build (MSVC x64) and run GPU-less tests
-    # The full suite on the platform OSSS runs on today: capture, GPU, and
-    # overlay are all Windows implementations, so only the environment-scoped
-    # tests above are excluded.
+    # The Windows high-fidelity suite: only the environment-scoped tests above
+    # are excluded.
     runs-on: windows-latest
 
     steps:
@@ -60,10 +59,10 @@ jobs:
           -E "osss_motion_tests|osss_interpolation_quality_tests|osss_upscaler_tests|osss_gui_tests"
           --output-on-failure
 
-  # On non-Windows platforms the only targets that exist are osss_core,
-  # osss_test_pattern, and their test executables (the capture/GPU/overlay
-  # targets are Windows-only until their Phase 2/3 backends land), so there is
-  # nothing to exclude: every registered test is one that runs unattended.
+  # On non-Windows platforms the portable capture/presentation targets are
+  # built when the platform SDK is present. The live window path is intentionally
+  # not launched in CI, but the software backend and every registered unit test
+  # are unattended-safe.
   # Single-config generator, so no -A/--config on any of these.
 
   build-and-test-macos:
@@ -82,12 +81,18 @@ jobs:
       - name: Test
         run: ctest --test-dir out/ci --output-on-failure
 
+      - name: Portable self-test
+        run: ./out/ci/osss --self-test
+
   build-and-test-linux:
     name: Build (GCC) and run core tests
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Install X11 desktop development packages
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxext-dev libxrandr-dev
 
       - name: Configure
         run: cmake -S . -B out/ci -DCMAKE_BUILD_TYPE=Release
@@ -97,3 +102,6 @@ jobs:
 
       - name: Test
         run: ctest --test-dir out/ci --output-on-failure
+
+      - name: Portable self-test
+        run: ./out/ci/osss --self-test

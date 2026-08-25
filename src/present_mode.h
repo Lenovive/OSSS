@@ -45,6 +45,19 @@ enum class PresentMode {
     return L"auto";
 }
 
+// The same names in narrow characters for portable diagnostics and banners.
+[[nodiscard]] constexpr const char* PresentModeName(const PresentMode mode) noexcept {
+    switch (mode) {
+    case PresentMode::tearing:
+        return "tearing";
+    case PresentMode::vsync:
+        return "vsync";
+    case PresentMode::automatic:
+        break;
+    }
+    return "auto";
+}
+
 // Accepts the canonical spellings plus the aliases users reach for first: `vrr`
 // and `gsync` for tearing, and `on`/`off` read as vsync on and vsync off.
 // Returns nullopt for anything else; the caller decides how to complain.

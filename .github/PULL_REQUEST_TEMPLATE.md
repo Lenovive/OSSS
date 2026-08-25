@@ -15,12 +15,12 @@ leaving a box ambiguous.
 
 ## Checks
 
-- [ ] `cmake --build --preset release` succeeds with **zero new warnings**
-- [ ] `ctest --preset release` is green (16/16)
-- [ ] `out\release\osss.exe --self-test` passes
+- [ ] The platform Release build succeeds with **zero new warnings**
+- [ ] The platform Release test suite is green (16 Windows or 13 portable tests)
+- [ ] The matching `osss --self-test` passes
       <!-- Required for any change to a shader, the renderer, the overlay, or
-           the output clock. Shaders compile at runtime, so ctest cannot catch
-           an HLSL error and only --self-test will. -->
+           the output clock. Windows shaders compile at runtime, so ctest cannot
+           catch an HLSL error and only --self-test will. -->
 - [ ] Touches the presentation loop or swap chain, so `--self-test` also passes
       with `--pacing queued` and `--pacing unpaced` — or: not applicable
 - [ ] Documentation updated per the ownership table in CONTRIBUTING.md

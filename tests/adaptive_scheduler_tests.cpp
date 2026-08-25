@@ -159,7 +159,7 @@ std::vector<SelectionRecord> RunArrivalJitterScenario(const std::vector<int>& ji
 void TestRateLimits() {
     for (int multiplier = osss::kMinimumMultiplier; multiplier <= osss::kMaximumMultiplier;
          ++multiplier) {
-        Require(osss::IsValidMultiplier(multiplier), "2x through 6x must be valid");
+        Require(osss::IsValidMultiplier(multiplier), "2x through 20x must be valid");
     }
     Require(!osss::IsValidMultiplier(osss::kMinimumMultiplier - 1), "1x must be rejected");
     Require(!osss::IsValidMultiplier(osss::kMaximumMultiplier + 1), "one past the ceiling must be rejected");
@@ -239,7 +239,7 @@ void TestHistoricalTargetCounts() {
     const int thirty_to_six_x = count(30.0, 6);
 
     Require(std::abs(sixty_to_two_x - 120) <= 3, "60 FPS with a 2x max must produce near 120 FPS");
-    Require(std::abs(sixty_to_six_x - 240) <= 3, "60 FPS with headroom must reach 240 FPS");
+    Require(std::abs(sixty_to_six_x - 240) <= 3, "60 FPS with a 6x ceiling must reach 240 FPS");
     Require(std::abs(one_twenty_to_two_x - 240) <= 3,
         "120 native FPS with a 2x max must reach 240 FPS");
     Require(std::abs(two_hundred_to_two_x - 240) <= 3,
@@ -295,7 +295,7 @@ void TestSteadyFractionalRates() {
         Require(result.fractional_interpolations > 100,
             "fractional source/target ratios must produce fractional alphas");
         Require(result.ceiling_holds == 0,
-            "60, 50, and 80 FPS must remain within a 6x ceiling at 144 Hz");
+            "60, 50, and 80 FPS must remain within the multiplier ceiling at 144 Hz");
         Require(result.underruns == 0, "steady queue-1 scenarios must not underrun after warmup");
         Require(result.missed == 0, "250 us scheduler polling must not miss target deadlines");
     }
@@ -312,7 +312,7 @@ void TestSteadyFractionalRates() {
 // output slot. Synthesising one there only softens edges and adds latency, so
 // the selector must fall back to the nearer real endpoint instead.
 void TestUnityPassthrough() {
-    for (const auto [source_fps, target, label] : {
+    for (const auto& [source_fps, target, label] : {
              std::tuple{120.0, osss::FrameRate{120, 1}, "source equal to target"},
              std::tuple{144.0, osss::FrameRate{120, 1}, "source faster than target"},
              std::tuple{119.0, osss::FrameRate{120, 1}, "source just under target"},
@@ -336,7 +336,7 @@ void TestUnityPassthrough() {
     // 120->144 case is the binding constraint on how wide the tolerance may be:
     // it is a real display pairing frame generation exists to serve, so it must
     // stay above the threshold.
-    for (const auto [source_fps, target, label] : {
+    for (const auto& [source_fps, target, label] : {
              std::tuple{60.0, osss::FrameRate{120, 1}, "60 to 120 needs 2x"},
              std::tuple{100.0, osss::FrameRate{120, 1}, "100 to 120 needs 1.2x"},
              std::tuple{120.0, osss::FrameRate{144, 1}, "120 to 144 needs 1.2x"},

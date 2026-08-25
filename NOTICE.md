@@ -7,9 +7,9 @@ nothing in LICENSE but the license itself.
 
 ## Third-party components
 
-**There are none.** OSSS has no third-party source or binary dependencies, no
-vendored code, and no package manager. It links only Microsoft Windows system
-libraries supplied by the operating system and the Windows SDK:
+**There are no vendored components.** OSSS has no vendored third-party source
+or binary libraries and no project package manager. It links only libraries
+supplied through the operating system or platform SDK:
 
 | Library | Used for |
 | --- | --- |
@@ -19,10 +19,15 @@ libraries supplied by the operating system and the Windows SDK:
 | `windowsapp` | Windows Graphics Capture (the Windows Runtime capture APIs) |
 | `comctl32`, `uxtheme` | The launcher's common controls and theming |
 | `avrt`, `ole32`, `shell32` | Multimedia thread scheduling, COM, and shell paths |
+| `Cocoa`, `CoreGraphics` | macOS window presentation and window capture |
+| `X11`, `Xext`, optional `Xrandr` | Linux window enumeration, capture, presentation, input shaping, and refresh-rate discovery |
 
-This zero-dependency property is deliberate. It is most of why the codebase can
-be read end to end, and it is the reason a fresh clone builds with nothing but
-CMake and MSVC.
+On macOS the portable target links the system Cocoa and CoreGraphics frameworks;
+on Linux it links the system X11 and Xext libraries when the X11 backend is
+enabled. Those are platform SDK libraries, not vendored third-party source or
+binary dependencies. This zero-vendored-dependency property is deliberate. It
+is most of why the codebase can be read end to end, and it is the reason a fresh
+clone needs only the platform's normal C++/desktop development packages.
 
 ## Adding a dependency
 

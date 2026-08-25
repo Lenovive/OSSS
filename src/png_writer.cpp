@@ -253,12 +253,11 @@ void AppendChunk(
     const char* const type,
     const std::span<const std::uint8_t> data) {
     AppendBigEndian(output, static_cast<std::uint32_t>(data.size()));
-    std::vector<std::uint8_t> checked;
-    checked.reserve(4 + data.size());
-    for (int index = 0; index < 4; ++index) {
-        checked.push_back(static_cast<std::uint8_t>(type[index]));
-    }
-    checked.insert(checked.end(), data.begin(), data.end());
+    std::vector<std::uint8_t> checked(4 + data.size());
+    std::transform(type, type + 4, checked.begin(), [](const char byte) {
+        return static_cast<std::uint8_t>(byte);
+    });
+    std::copy(data.begin(), data.end(), checked.begin() + 4);
     output.insert(output.end(), checked.begin(), checked.end());
     AppendBigEndian(output, Crc32(checked));
 }

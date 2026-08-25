@@ -6,19 +6,20 @@ accepted under the [MIT license](LICENSE) that covers the rest of the project.
 
 ## The short version
 
-1. Build it (below). If the build works you already have every dependency —
-   there are none beyond the Windows SDK.
+1. Build it (below). If the build works you already have the required platform
+   SDK dependencies; the project does not vendor third-party code.
 2. Change something.
-3. Run `ctest --preset release`. It must be green.
+3. Run the Release test command for your platform below. It must be green.
 4. Open a pull request that says what you changed and what you measured.
 
 ## Getting a build
 
-OSSS is Windows-only (Windows 10 2004 or later, Direct3D feature level 11.0)
-and needs MSVC. Everything must run from a **Developer PowerShell for VS 2022**
-so `cl`, `ninja`, and the Windows SDK headers are on the path. A plain
-PowerShell fails with missing standard headers — that is environmental, not a
-source error.
+The high-fidelity backend targets Windows 10 2004 or later and needs MSVC. The
+portable backend targets macOS (CoreGraphics/Cocoa) and Linux (X11/Xext, with
+optional XRandR refresh discovery). On
+Windows, everything must run from a **Developer PowerShell for VS 2022** so
+`cl`, `ninja`, and the Windows SDK headers are on the path. A plain PowerShell
+fails with missing standard headers — that is environmental, not a source error.
 
 To bootstrap from a plain PowerShell:
 
@@ -46,8 +47,10 @@ link it from every new target rather than repeating compile options, or the
 target silently builds without `/W4` and without `UNICODE`, and neither failure
 is visible until much later.
 
-Not on Windows, or no GPU? You can still read the code and review pull
-requests, and CI will build and run the GPU-less tests for you.
+On macOS or Linux, configure a normal CMake Release tree and run the portable
+backend tests. Linux desktop capture requires X11/Xext development packages;
+without them the core and software self-test still build, while live capture
+reports the missing backend explicitly.
 
 ## What a change has to pass
 
@@ -55,15 +58,16 @@ A change is not finished until all of these hold. Say in the pull request which
 ones you ran and which you could not — "I had no GPU, so I did not run the
 motion tests" is a fine thing to write, and much better than silence.
 
-1. `cmake --build --preset release` succeeds with **zero new warnings**. The
-   warning level is `/W4 /permissive-`.
-2. `ctest --preset release` is fully green (16/16).
-3. `out\release\osss.exe --self-test` passes. This is **required** for any
-   change touching a shader, the renderer, the overlay, or the output clock —
-   shaders compile at runtime, so an HLSL error is a runtime failure that
-   `ctest` cannot catch and only `--self-test` will. A change to the
-   presentation loop or swap chain should also pass it with `--pacing queued`
-   and `--pacing unpaced`.
+1. The platform's Release build succeeds with **zero new warnings**. Windows
+   uses `cmake --build --preset release` with `/W4 /permissive-`; portable
+   builds use the `out/portable-release` tree with `-Wall -Wextra`.
+2. The matching Release CTest suite is fully green (16/16 on Windows or 13/13
+   on a portable build, including `osss_portable_backend_tests`).
+3. The matching `osss --self-test` passes. On Windows this is **required** for
+   any change touching a shader, renderer, overlay, or output clock: shaders
+   compile at runtime, so an HLSL error is a runtime failure that `ctest` cannot
+   catch. A Windows presentation-loop or swap-chain change should also pass it
+   with `--pacing queued` and `--pacing unpaced`.
 4. Documentation is updated (see the ownership table below). A new or changed
    CLI flag means `--help` **and** `README.md`, in the same change.
 5. The frozen fixtures below are untouched.
@@ -75,8 +79,10 @@ motion tests" is a fine thing to write, and much better than silence.
 | Check | Unattended? | Notes |
 | --- | --- | --- |
 | `ctest --preset release` | Yes | Runs `osss_adaptive_scheduler_tests`, `osss_test_pattern_tests`, `osss_app_profile_tests`, `osss_debug_view_tests`, `osss_flow_scale_tests`, `osss_launcher_layout_tests`, `osss_output_mode_tests`, `osss_png_writer_tests`, `osss_window_catalog_tests`, `osss_pacing_mode_tests`, `osss_upscaler_tests`, `osss_ui_mask_tests`, `osss_stats_overlay_tests`, `osss_motion_tests` and `osss_interpolation_quality_tests` (both need a D3D11 device), and `osss_gui_tests` (which runs `osss_gui --self-test`; creates a window, asserts no two control rects intersect in either disclosure state, and that every tooltip is registered). |
+| `ctest --test-dir out/portable-release` | Yes | Adds `osss_portable_backend_tests`, which checks the software translation, midpoint reconstruction, and scene-cut fallback without requiring a desktop. |
 | `out\release\osss_interpolation_quality_tests.exe --report` | Yes | The same bench with its full per-sample table. `--dump <dir>` writes observed/expected images as a PPM and a PNG of the same pixels (plus flow/confidence views for the reach ramp); `--dump-sequence <dir>` writes the two runs that are ordered in time -- the temporal sequence and the reach ramp -- at eight views each including the `error-step` flicker map, with a `viewer.html` to step, loop, and A/B-blink them, and `--dump-embed <divisor>` adds a single-file copy with the images inlined (~52 MB of PNGs and about a minute on top of the run); `--size WxH` re-measures at another resolution; `--temporal-prior on|off` and `--performance-mode` A/B the estimator (the reach section always runs both prior settings and also a dedicated performance-mode interpolator). ~30 s; prefers a hardware device, falls back to WARP. |
 | `out\release\osss.exe --self-test` | Yes | Adapter, motion setup, overlay/click-through styles, resolved present mode, output clock. The only check that compiles the shaders. |
+| `out/portable-release/osss --self-test` | Yes | Software backend translation, scene-cut fallback, and frame-format validation. |
 | `out\release\osss.exe --warm-shader-cache` | Yes | Compiles the motion shaders into `%LOCALAPPDATA%\OSSS\shadercache` and exits. Creates no window. Useful for timing a cold compile: delete that directory first. |
 | `out\release\osss.exe --capture-self-test` | Needs a real desktop session | Opens a small window and captures it. Fails under RDP/sandbox — report as environment-scoped, not source-scoped. |
 | `out\release\osss.exe --adaptive-capture-self-test` | Needs a real desktop session | ~12 s 60→144 timing run; results are hardware/display dependent. |
@@ -131,8 +137,9 @@ an interpolator that works from one that has silently become a crossfade.
 
 A tunable touches more files than it looks like. The full chain:
 
-1. `src/main.cpp` — the `Options` field, the parse branch, the `--help` text,
-   and the startup banner if the user should see it.
+1. `src/main.cpp` and (for shared portable flags) `src/portable_main.cpp` — the
+   `Options` field, parse branch, `--help` text, and startup banner if the user
+   should see it. Keep the common spellings and validation aligned.
 2. `src/gui_main.cpp` — the control inside the layout walk in
    `CreateLauncherControls` (ask `LauncherLayout` for its rect; do not name
    coordinates), an entry in `kTips` registered with `AddFieldTip`, and the
@@ -200,7 +207,8 @@ Never overstate what is verified. If a number came from one machine, say which.
   model *and* its weights before it can be merged.
 - **Extrapolate, or use a queue target other than 1.** Both are design
   reversals, not tweaks.
-- **Change the platform minimums** (Windows 10 2004, D3D feature level 11.0).
+- **Change the platform minimums** (Windows 10 2004 and D3D feature level 11.0,
+  macOS 12, or Linux X11/Xext).
 
 None of these are forbidden — and a fork is always fine, which is rather the
 point — but in this repository they want a discussion first.
@@ -239,9 +247,9 @@ copy `handoffs/TEMPLATE/` to start a new one.
 
 ## Reporting a bug
 
-Include your GPU and driver version, your Windows build, the exact command line
-(or launcher settings), the target window's application and its graphics API,
-and what the startup banner printed. For a visual artifact, a
+Include your operating-system version, GPU and driver where applicable, the
+exact command line (or launcher settings), the target window's application and
+graphics API, and what the startup banner printed. For a visual artifact, a
 `--dump-sequence` viewer or a short capture is worth a paragraph of
 description. For a pacing complaint, the stats-overlay numbers or a `--report`
 run beats "it feels stuttery".

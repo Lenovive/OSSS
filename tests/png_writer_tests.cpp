@@ -410,7 +410,7 @@ void TestRoundTrip() {
 // A single row and a single column are the two cases where a filter reads a row
 // or a column that does not exist.
 void TestDegenerateDimensions() {
-    for (const auto [width, height] :
+    for (const auto& [width, height] :
          {std::pair<std::uint32_t, std::uint32_t>{1, 1},
           std::pair<std::uint32_t, std::uint32_t>{1, 64},
           std::pair<std::uint32_t, std::uint32_t>{64, 1}}) {

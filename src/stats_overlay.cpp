@@ -1,5 +1,6 @@
 #include "stats_overlay.h"
 
+#include "frame_rate_limits.h"
 #include "window_catalog.h"
 
 #include <algorithm>
@@ -77,7 +78,7 @@ struct StatsOverlay::Impl {
         const double target_fps,
         const bool motion_enabled) {
         Release();
-        max_multiplier_ = std::clamp(max_multiplier, 2, 6);
+        max_multiplier_ = std::clamp(max_multiplier, kMinimumMultiplier, kMaximumMultiplier);
         target_fps_ = std::max(0.0, target_fps);
         motion_enabled_ = motion_enabled;
         target_bounds_ = target_bounds;

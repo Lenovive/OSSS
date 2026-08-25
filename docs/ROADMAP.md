@@ -693,3 +693,28 @@ An ML interpolator should be evaluated only after this harness exists. It can
 replace the motion estimator/fusion stages while retaining capture, scheduling,
 diagnostics, and presentation. Any candidate model needs a commercial-license
 audit and per-vendor latency measurements before adoption.
+
+## Milestone 4: portable desktop backend — functional path complete
+
+The common scheduler and policy layer now has a live non-Windows path:
+
+- macOS captures with CoreGraphics and presents through a click-through Cocoa
+  window. Screen Recording permission failures are returned as startup errors.
+- Linux captures and presents X11 windows, with an empty X11 input shape for the
+  overlay. The X11/Xext development libraries are detected by CMake rather than
+  assumed, and a missing backend is reported explicitly.
+- Both portable paths use `PixelFrame`, the shared desktop boundary, and the
+  dependency-free software interpolator. Its bounded global-motion model,
+  explicit HUD-mask coverage, scene-cut fallback, and blend A/B mode are
+  intentionally a functional fallback, not a claim of parity with the Windows
+  dense D3D11 flow estimator.
+- `osss_gui` has a dependency-free portable launcher that enumerates candidates
+  and starts the same validated CLI path by native window handle; Ctrl+C stops a
+  portable session. Window motion and resize are followed while the session is
+  live, and XRandR is used for automatic Linux refresh discovery when present.
+
+Remaining platform-parity and acceptance gates are deliberately explicit:
+Wayland capture/presentation (which needs a portal/PipeWire path rather than
+X11), native GPU motion backends (Metal/Vulkan), and visual acceptance on actual
+macOS and Linux desktops. The functional X11/CoreGraphics path does not silently
+claim those stronger guarantees.

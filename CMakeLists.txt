@@ -1,10 +1,28 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(OSSS VERSION 0.1.0 LANGUAGES CXX)
+project(OSSS VERSION 0.2.0 LANGUAGES CXX)
+
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
+if(UNIX AND NOT APPLE)
+    find_package(X11 QUIET)
+    if(X11_FOUND)
+        find_library(OSSS_XEXT_LIBRARY NAMES Xext)
+        find_library(OSSS_XRANDR_LIBRARY NAMES Xrandr)
+        find_path(OSSS_XRANDR_INCLUDE_DIR X11/extensions/Xrandr.h)
+    endif()
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+if(APPLE)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(CMAKE_OBJCXX_EXTENSIONS OFF)
+endif()
 
 if(WIN32)
     set(OSSS_WINDOWS_MANIFEST src/osss.manifest)
@@ -55,15 +73,31 @@ if(WIN32)
     # calls SHGetKnownFolderPath, so the library declares those itself rather
     # than leaving every consumer to discover them at link time.
     target_link_libraries(osss_core PUBLIC osss_common_flags dwmapi shell32)
+elseif(APPLE)
+    target_sources(osss_core PRIVATE src/window_catalog_macos.mm)
+    target_compile_options(osss_core PRIVATE
+        $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    target_link_libraries(osss_core PUBLIC osss_common_flags
+        "-framework Cocoa"
+        "-framework CoreGraphics")
+elseif(X11_FOUND)
+    target_sources(osss_core PRIVATE src/window_catalog_x11.cpp)
+    target_include_directories(osss_core PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(osss_core PUBLIC osss_common_flags ${X11_LIBRARIES})
+    if(OSSS_XRANDR_LIBRARY AND OSSS_XRANDR_INCLUDE_DIR)
+        target_compile_definitions(osss_core PRIVATE OSSS_HAVE_XRANDR=1)
+        target_include_directories(osss_core PRIVATE ${OSSS_XRANDR_INCLUDE_DIR})
+        target_link_libraries(osss_core PUBLIC ${OSSS_XRANDR_LIBRARY})
+    endif()
 else()
+    target_sources(osss_core PRIVATE src/window_catalog_stub.cpp)
     target_link_libraries(osss_core PUBLIC osss_common_flags)
 endif()
 
-# --- Windows-only targets ------------------------------------------------------
-# The capture, GPU, and overlay paths are Win32/D3D11 implementations until the
-# Phase 2/3 backends give them non-Windows twins. Everything here needs either
-# the Direct3D device or the Win32 desktop; the osss_core and osss_test_pattern
-# libraries above are what a GPU-less or non-Windows machine builds and tests.
+# --- Windows high-fidelity targets --------------------------------------------
+# The original capture, GPU, overlay, and native settings paths remain the
+# Windows/D3D11 implementation. Non-Windows builds use the portable runtime
+# below; the common scheduler and core policy are shared by both paths.
 
 if(WIN32)
 
@@ -107,6 +141,45 @@ target_link_libraries(osss_gui PRIVATE
 
 endif() # WIN32
 
+# The portable runtime keeps the scheduler and core policy shared with the
+# Windows path while replacing D3D/WGC with a native desktop capture/present
+# boundary and a dependency-free software interpolator. X11 is used on Linux
+# when its development headers are available; macOS uses CoreGraphics/Cocoa.
+if(NOT WIN32)
+    add_library(osss_portable_runtime
+        src/platform/desktop_backend.cpp
+        src/platform/software_interpolator.cpp
+    )
+    target_include_directories(osss_portable_runtime PUBLIC src)
+    target_link_libraries(osss_portable_runtime PUBLIC osss_common_flags)
+
+    if(APPLE)
+        target_sources(osss_portable_runtime PRIVATE src/platform/desktop_backend_macos.mm)
+        target_link_libraries(osss_portable_runtime PUBLIC
+            "-framework Cocoa"
+            "-framework CoreGraphics")
+        target_compile_options(osss_portable_runtime PRIVATE
+            $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+    elseif(X11_FOUND AND OSSS_XEXT_LIBRARY)
+        target_sources(osss_portable_runtime PRIVATE src/platform/desktop_backend_x11.cpp)
+        target_include_directories(osss_portable_runtime PRIVATE ${X11_INCLUDE_DIR})
+        target_link_libraries(osss_portable_runtime PUBLIC ${X11_LIBRARIES})
+        if(TARGET X11::Xext)
+            target_link_libraries(osss_portable_runtime PUBLIC X11::Xext)
+        else()
+            target_link_libraries(osss_portable_runtime PUBLIC ${OSSS_XEXT_LIBRARY})
+        endif()
+    else()
+        target_sources(osss_portable_runtime PRIVATE src/platform/desktop_backend_stub.cpp)
+    endif()
+
+    add_executable(osss src/portable_main.cpp)
+    target_link_libraries(osss PRIVATE osss_portable_runtime osss_core)
+
+    add_executable(osss_gui src/portable_gui_main.cpp)
+    target_link_libraries(osss_gui PRIVATE osss_core)
+endif()
+
 # The image side of the test harnesses: the analytic pattern and the two
 # encoders that write it out. png_writer belongs here rather than in osss_core
 # because every consumer is a dump path that already links this library, and
@@ -149,6 +222,17 @@ enable_testing()
 # --- CTest suite -------------------------------------------------------------
 # Every add_test below runs unattended. Keep the table in CONTRIBUTING.md
 # ("Which checks are safe to run unattended") in sync when adding one.
+
+if(NOT WIN32)
+    add_executable(osss_portable_backend_tests
+        tests/portable_backend_tests.cpp
+    )
+    target_link_libraries(osss_portable_backend_tests PRIVATE
+        osss_portable_runtime
+        osss_core
+        osss_test_support)
+    add_test(NAME osss_portable_backend_tests COMMAND osss_portable_backend_tests)
+endif()
 
 add_executable(osss_adaptive_scheduler_tests
     tests/adaptive_scheduler_tests.cpp

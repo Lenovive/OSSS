@@ -529,7 +529,7 @@ bool FrameSelector::GenerationEnabled() const noexcept {
 
 void FrameSelector::SetMaximumMultiplier(const int maximum_multiplier) {
     if (!IsValidMultiplier(maximum_multiplier)) {
-        throw std::out_of_range("Maximum frame multiplier must be between 2 and 6.");
+        throw std::out_of_range("Maximum frame multiplier must be between 2 and 20.");
     }
     maximum_multiplier_ = maximum_multiplier;
     slot_gate_.Reset();

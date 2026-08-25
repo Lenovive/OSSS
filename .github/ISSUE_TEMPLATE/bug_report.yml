@@ -29,7 +29,7 @@ body:
         API.
       render: text
       placeholder: |
-        out\release\osss.exe --title "Some Game" --target-fps 240 --pacing paced
+        osss --title "Some Game" --target-fps 240 --pacing paced
     validations:
       required: true
 
@@ -38,9 +38,9 @@ body:
     attributes:
       label: Startup banner
       description: >
-        Paste what osss.exe printed on startup. It records the adapter, the
-        resolved present mode, and the output clock, which answers half the
-        questions this report would otherwise generate.
+        Paste what osss printed on startup. It records the active backend,
+        resolved settings, and output clock, which answers half the questions
+        this report would otherwise generate.
       render: text
     validations:
       required: false
@@ -49,16 +49,17 @@ body:
     id: gpu
     attributes:
       label: GPU and driver version
-      placeholder: "NVIDIA RTX 4070, driver 566.36"
+      description: Required for the Windows D3D11 backend; optional for the macOS/Linux software backend.
+      placeholder: "NVIDIA RTX 4070, AMD RX 7900 XTX, Intel Arc A770, or portable software backend"
     validations:
-      required: true
+      required: false
 
   - type: input
-    id: windows
+    id: operating-system
     attributes:
-      label: Windows version
-      description: "Run `winver`, or `[System.Environment]::OSVersion.Version` in PowerShell."
-      placeholder: "Windows 11 24H2, build 26100.2314"
+      label: Operating system and version
+      description: Include the Windows build, macOS version, or Linux distribution and desktop session.
+      placeholder: "Windows 11 24H2; macOS 15.1; or Ubuntu 24.04 with X11"
     validations:
       required: true
 

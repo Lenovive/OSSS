@@ -2,8 +2,9 @@
 
 ## Supported versions
 
-OSSS is pre-1.0 and experimental. Only the current `main` branch is supported;
-there are no maintained release branches and no backports.
+OSSS is pre-1.0 and experimental. The latest GitHub release and current `main`
+branch are supported; there are no maintained release branches or backports to
+older tags.
 
 ## Reporting a vulnerability
 
@@ -45,15 +46,15 @@ surface is:
   protecting anything, and it is not designed to resist a hostile target
   process — which, being a normal process on the same desktop at the same
   privilege level, could interfere with it in a dozen ways regardless.
-- **Anti-cheat and DRM interactions.** OSSS captures with Windows Graphics
-  Capture and injects no code into the target, but some games and DRM systems
-  will still object to a topmost overlay or to being captured. That is a
-  compatibility matter, not a vulnerability, and OSSS will not accept changes
-  whose purpose is to evade such detection.
+- **Anti-cheat and DRM interactions.** OSSS uses the operating system's desktop
+  capture API and injects no code into the target, but some games and DRM
+  systems will still object to a topmost overlay or to being captured. That is
+  a compatibility matter, not a vulnerability, and OSSS will not accept
+  changes whose purpose is to evade such detection.
 - **Bugs requiring administrator privileges or physical access** to exploit.
-- **Vulnerabilities in Windows itself, in GPU drivers, or in the Windows SDK.**
-  Report those to the relevant vendor. If OSSS can *trigger* one from
-  untrusted input, that part is in scope here.
+- **Vulnerabilities in an operating system, GPU driver, or platform SDK.** Report
+  those to the relevant vendor. If OSSS can *trigger* one from untrusted input,
+  that part is in scope here.
 - **Crashes in the test and benchmark harnesses** driven by deliberately
   malformed developer flags. Those are ordinary bugs; open a normal issue.
 

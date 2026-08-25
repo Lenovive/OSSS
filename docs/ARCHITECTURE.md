@@ -29,15 +29,22 @@ subsystem. If you read only one thing, read it.
 
 | Binary | Source | Role |
 | --- | --- | --- |
-| `osss.exe` | `src/main.cpp` | The pipeline. CLI parsing, self-tests, and the production loop. |
-| `osss_gui.exe` | `src/gui_main.cpp`, `src/launcher_theme.*` | Settings launcher. Spawns `osss.exe` and stops it through a named event. Owns no pipeline state: every setting leaves it as a command-line flag, which is why a launcher change can never alter what a session does. Its controls are laid out by `LauncherLayout` and painted by the launcher itself so the window can follow the system light/dark theme. |
+| `osss.exe` | `src/main.cpp` on Windows; `src/portable_main.cpp` elsewhere | The pipeline. The Windows build owns the D3D11/WGC loop; the portable build owns the scheduler loop around `DesktopCapture`, `SoftwareInterpolator`, and `DesktopPresenter`. |
+| `osss_gui.exe` | `src/gui_main.cpp`, `src/launcher_theme.*` on Windows; `src/portable_gui_main.cpp` elsewhere | Settings launcher. Windows uses the owner-painted native settings window; portable builds use a dependency-free terminal launcher that enumerates windows and starts the same pipeline with the selected native window handle. |
 | `osss_test_animation.exe` | `src/test_animation_*`, `src/test_pattern.*` | Deterministic D3D9Ex/10/11/12 source windows for testing. Not part of the pipeline. |
 
 `osss_gui.exe` never interpolates anything. It builds an argument list and
-launches `osss.exe`, then signals a named Windows event to request shutdown —
-that is what the undocumented-by-design `--stop-event` flag is for.
+launches `osss.exe`; the Windows launcher also signals a named event to request
+shutdown, while portable sessions are stopped with Ctrl+C. The portable
+launcher deliberately has no toolkit dependency so the same binary works from
+an X11 terminal or a macOS terminal.
 
 ## One device, two threads
+
+The following device/thread invariant is Windows-specific. Portable builds do
+not create a shared GPU device: `portable_main.cpp` runs capture, CPU motion,
+presentation, and scheduler bookkeeping on one loop, while each native API is
+confined to `DesktopCapture` or `DesktopPresenter`.
 
 There is exactly one `ID3D11Device` in the process.
 
@@ -420,8 +427,11 @@ fastest way to find the code that owns a behaviour you want to change.
 | --- | --- |
 | `src/adaptive_scheduler.*` | `FrameRate`, `OutputClock`, `SourceTimeline`, `TargetSlotGate`, `FrameSelector`, `PacingMonitor` — the target-owned timeline. Start here for pacing questions. `PacingMonitor` is measurement only: it reports the present-interval distribution and nothing reads it back into the loop. |
 | `src/flow_scale.h` | The flow-grid divisor **and** `ResolveCoarseSearchRadius`, which resolves the coarse motion search from a reach target stated in *source pixels*. It divides that target by both the measured source period and the flow divisor, so reach covers a constant velocity rather than a constant displacement, and stays the same distance on every `--flow-scale` rather than halving when the grid gets finer. Header-only and dependency-free. |
-| `src/frame_rate_limits.h` | Accepted multiplier (2–6) and target-FPS (24–1000) validators. Header-only. |
-| `src/capture_session.*` | WGC capture, compositor timestamps, async GPU duplicate signature. |
+| `src/frame_rate_limits.h` | Accepted multiplier (2–20) and target-FPS (24–1000) validators. Header-only. |
+| `src/capture_session.*` | Windows WGC capture, compositor timestamps, async GPU duplicate signature. |
+| `src/platform/pixel_frame.h` | Owned 0xAARRGGBB frame storage shared by portable capture, interpolation, presentation, and diagnostic code. |
+| `src/platform/desktop_backend.*` | Portable capture/presentation boundary. `desktop_backend_x11.cpp` uses X11/Xext; `desktop_backend_macos.mm` uses CoreGraphics/Cocoa; the stub reports an explicit unavailable-backend error. |
+| `src/platform/software_interpolator.*` | Dependency-free portable interpolation: bounded global translation, bilinear warps, scene-cut newest-frame fallback, explicit blend mode, and source-sized HUD-mask coverage. It is a functional CPU backend, not a claim of D3D11 quality or speed parity. |
 | `src/renderer.*` | Output window, waitable flip-model swap chain, GPU frame history, blend shader, hands pairs to `MotionInterpolator`. |
 | `src/gpu_timing.*` | Non-blocking D3D11 timestamp-query rings and rolling p50/p95 GPU timing statistics. |
 | `src/present_mode.h` | `PresentMode` (vsync / tearing / automatic) plus its CLI spelling and parser. Header-only and dependency-free so `osss_gui.exe` can name a mode without acquiring a Direct3D dependency. |
@@ -436,11 +446,11 @@ fastest way to find the code that owns a behaviour you want to change.
 | `src/debug_view.h` | `DebugView` (`off` / `flow` / `confidence` / `fallback`): runtime visualisation of the interpolator's internals, replacing the frame rather than overlaying it. Exists because all seven motion defects in this project were found by hand-editing the fusion shader to return an intermediate as colour. `fallback` answers "why is this region not being interpolated" directly. Header-only. |
 | `src/app_profile.*` | Per-application settings in `%LOCALAPPDATA%\OSSS\profiles.txt`, stored as **argument lists keyed by executable name** rather than a struct mirroring `Options`. That is the design: one parsing path, so a profile cannot express what the CLI rejects; nothing to keep in sync when a flag is added; and a file users can edit by hand. |
 | `src/stats_overlay.*` | Topmost click-through HUD, `RuntimeStats`, and the header-only `GeneratedFrameShare` telemetry helper. |
-| `src/window_catalog.*` | Target-window enumeration and rational display refresh. |
+| `src/window_catalog.*` | Target-window enumeration and display refresh at the common boundary; Win32, X11, and CoreGraphics implementations live beside it. |
 | `src/dpi_awareness.h` | Per-monitor DPI opt-in, included by each executable. Header-only. |
-| `src/main.cpp` | `osss.exe`: CLI parsing, `--self-test`, `--capture-self-test`, `--adaptive-capture-self-test`, and the production loop `RunFrameGeneration`. |
+| `src/main.cpp` / `src/portable_main.cpp` | `osss.exe`: platform-specific CLI parsing and production loop. Windows owns the D3D11 self/capture tests and `RunFrameGeneration`; portable builds own the `DesktopCapture`/`SoftwareInterpolator`/`DesktopPresenter` loop and software self-test. |
 | `src/launcher_theme.*` | The launcher's colour tokens per theme, the system light/dark query, and `LauncherLayout` -- the y cursor every launcher control asks for its rect instead of naming coordinates. Pure and GPU-less, so the overlap rule is unit-tested. |
-| `src/gui_main.cpp` | `osss_gui.exe`: Win32 settings launcher (single file, ~2.5k lines). Two-tier layout with an Advanced disclosure, a tooltip per option, and a status panel; every interactive control is owner-painted so the window follows the system light/dark theme. Builds the `osss.exe` command line and owns the `--stop-event` handshake. |
+| `src/gui_main.cpp` | `osss_gui.exe`: Win32 settings launcher. Two-tier layout with an Advanced disclosure, a tooltip per option, and a status panel; every interactive control is owner-painted so the window follows the system light/dark theme. Builds the `osss.exe` command line and owns the `--stop-event` handshake. |
 | `src/capture_smoke.*` | Real-desktop WGC integration checks used by the self-tests. |
 | `src/test_animation_main.cpp`, `src/test_animation_backends.*`, `src/test_animation_catalog.h`, `src/test_pattern.*` | `osss_test_animation.exe`: deterministic D3D9Ex/10/11/12 source windows and reference scoring. See [TEST_ANIMATIONS.md](TEST_ANIMATIONS.md). |
 | `src/osss.manifest` | The Win32 application manifest linked into every executable: per-monitor DPI v2, and Common Controls 6 for the launcher's tooltips and subclassing. |

@@ -47,11 +47,11 @@ body:
       label: Which part of the pipeline?
       multiple: true
       options:
-        - Capture (Windows Graphics Capture)
+        - Capture (WGC / CoreGraphics / X11)
         - Optical flow / interpolation
         - Upscaling
         - Pacing and the output clock
-        - Presentation / swap chain / overlay
+        - Presentation / swap chain / desktop overlay
         - Launcher GUI
         - Test and benchmark harnesses
         - Build, CI, or documentation

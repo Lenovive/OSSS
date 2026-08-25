@@ -12,6 +12,55 @@
 #include <string>
 #include <vector>
 
+@interface OsssFrameView : NSView
+@property(nonatomic, assign) std::vector<std::uint32_t>* pixels;
+@property(nonatomic, assign) std::uint32_t pixelWidth;
+@property(nonatomic, assign) std::uint32_t pixelHeight;
+@end
+
+@implementation OsssFrameView
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    if (!self.pixels || self.pixels->empty() || self.pixelWidth == 0 || self.pixelHeight == 0) {
+        [[NSColor blackColor] setFill];
+        NSRectFill(self.bounds);
+        return;
+    }
+    CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
+    CGDataProviderRef provider = CGDataProviderCreateWithData(
+        nullptr,
+        self.pixels->data(),
+        self.pixels->size() * sizeof(std::uint32_t),
+        nullptr);
+    CGImageRef image = CGImageCreate(
+        self.pixelWidth,
+        self.pixelHeight,
+        8,
+        32,
+        static_cast<std::size_t>(self.pixelWidth) * sizeof(std::uint32_t),
+        color_space,
+        kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst,
+        provider,
+        nullptr,
+        false,
+        kCGRenderingIntentDefault);
+    if (image) {
+        CGContextRef context = [[NSGraphicsContext currentContext] CGContext];
+        CGContextSetInterpolationQuality(context, kCGInterpolationNone);
+        CGContextSaveGState(context);
+        CGContextTranslateCTM(context, 0.0, self.bounds.size.height);
+        CGContextScaleCTM(context, 1.0, -1.0);
+        CGContextDrawImage(context, NSRectToCGRect(self.bounds), image);
+        CGContextRestoreGState(context);
+        CGImageRelease(image);
+    }
+    CGDataProviderRelease(provider);
+    CGColorSpaceRelease(color_space);
+}
+
+@end
+
 namespace osss {
 namespace {
 
@@ -66,55 +115,6 @@ PixelFrame CopyWindowImage(const CGWindowID window, std::string& error) {
     }
     return frame;
 }
-
-@interface OsssFrameView : NSView
-@property(nonatomic, assign) std::vector<std::uint32_t>* pixels;
-@property(nonatomic, assign) std::uint32_t pixelWidth;
-@property(nonatomic, assign) std::uint32_t pixelHeight;
-@end
-
-@implementation OsssFrameView
-
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    if (!self.pixels || self.pixels->empty() || self.pixelWidth == 0 || self.pixelHeight == 0) {
-        [[NSColor blackColor] setFill];
-        NSRectFill(self.bounds);
-        return;
-    }
-    CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
-    CGDataProviderRef provider = CGDataProviderCreateWithData(
-        nullptr,
-        self.pixels->data(),
-        self.pixels->size() * sizeof(std::uint32_t),
-        nullptr);
-    CGImageRef image = CGImageCreate(
-        self.pixelWidth,
-        self.pixelHeight,
-        8,
-        32,
-        static_cast<std::size_t>(self.pixelWidth) * sizeof(std::uint32_t),
-        color_space,
-        kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst,
-        provider,
-        nullptr,
-        false,
-        kCGRenderingIntentDefault);
-    if (image) {
-        CGContextRef context = [[NSGraphicsContext currentContext] CGContext];
-        CGContextSetInterpolationQuality(context, kCGInterpolationNone);
-        CGContextSaveGState(context);
-        CGContextTranslateCTM(context, 0.0, self.bounds.size.height);
-        CGContextScaleCTM(context, 1.0, -1.0);
-        CGContextDrawImage(context, NSRectToCGRect(self.bounds), image);
-        CGContextRestoreGState(context);
-        CGImageRelease(image);
-    }
-    CGDataProviderRelease(provider);
-    CGColorSpaceRelease(color_space);
-}
-
-@end
 
 } // namespace
 

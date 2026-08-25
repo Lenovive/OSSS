@@ -1,4 +1,5 @@
 #include "platform/desktop_backend.h"
+#include "window_catalog.h"
 
 #if defined(__APPLE__)
 
@@ -33,6 +34,9 @@
         self.pixels->data(),
         self.pixels->size() * sizeof(std::uint32_t),
         nullptr);
+    const CGBitmapInfo presentation_bitmap_info = static_cast<CGBitmapInfo>(
+        static_cast<std::uint32_t>(kCGBitmapByteOrder32Host) |
+        static_cast<std::uint32_t>(kCGImageAlphaPremultipliedFirst));
     CGImageRef image = CGImageCreate(
         self.pixelWidth,
         self.pixelHeight,
@@ -40,7 +44,7 @@
         32,
         static_cast<std::size_t>(self.pixelWidth) * sizeof(std::uint32_t),
         color_space,
-        kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst,
+        presentation_bitmap_info,
         provider,
         nullptr,
         false,
@@ -66,11 +70,14 @@ namespace {
 
 PixelFrame CopyWindowImage(const CGWindowID window, std::string& error) {
     PixelFrame frame;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     CGImageRef image = CGWindowListCreateImage(
         CGRectNull,
         kCGWindowListOptionIncludingWindow,
         window,
         kCGWindowImageBoundsIgnoreFraming | kCGWindowImageNominalResolution);
+#pragma clang diagnostic pop
     if (!image) {
         error = "CoreGraphics could not capture the target window (screen recording permission may be missing)";
         return frame;
@@ -81,6 +88,9 @@ PixelFrame CopyWindowImage(const CGWindowID window, std::string& error) {
     frame.media_time = PixelFrame::Clock::now();
     std::vector<std::uint8_t> rgba(width * height * 4U, 0);
     CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
+    const CGBitmapInfo capture_bitmap_info = static_cast<CGBitmapInfo>(
+        static_cast<std::uint32_t>(kCGImageAlphaPremultipliedLast) |
+        static_cast<std::uint32_t>(kCGBitmapByteOrder32Big));
     CGContextRef context = CGBitmapContextCreate(
         rgba.data(),
         width,
@@ -88,7 +98,7 @@ PixelFrame CopyWindowImage(const CGWindowID window, std::string& error) {
         8,
         width * 4U,
         color_space,
-        kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        capture_bitmap_info);
     if (!context) {
         CGColorSpaceRelease(color_space);
         CGImageRelease(image);
